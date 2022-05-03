@@ -1,0 +1,1440 @@
+---
+title: "analyze_10x_novaseq_nextseq_combined"
+author: "Avi Ramu"
+date: "10/19/2021"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Goal
+- Analyze the latest 10X run generated in October 2021, this is a time-series of
+Prrx1-C1 line. Three samples were -dox and three were +dox. There were three time
+points. One time-point was t0 or untreated, the second time point was 19 hrs and third
+time point was 30 hrs.
+This dataset combines a nextseq and novaseq run.
+
+```{r setup_and_save}
+library(reticulate)
+#reticulate::use_python("/usr/local/bin/python3.7", required = T)
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+#library(recipes)
+#library(biomaRt)
+
+
+set.seed(300)
+setwd("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/102021_prrx1_timecourse_10x_nextseq_novaseq_combined")
+print(sessionInfo())
+```
+
+```{r function_definition}
+find_variable <- function(s1, variable_plot) {
+    s1 <- FindVariableFeatures(s1, selection.method = "vst", nfeatures = 2000)
+    # Identify the 10 most highly variable genes
+    #top10 <- head(VariableFeatures(s1), 10)
+    #print(plot1)
+    pdf(variable_plot)
+    # plot variable features with and without labels
+    plot1 <- VariableFeaturePlot(s1)
+    #plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+    print(plot1)
+    #print(CombinePlots(plots = list(plot1, plot2)))
+    dev.off()
+    return(s1)
+}
+```
+
+
+```{r read_in_table}
+# Load t0
+t0_nodox <- Read10X(data.dir = "./S1/outs/filtered_feature_bc_matrix/")
+# Initialize the Seurat object with the raw (non-normalized data).
+t0_nodox <- CreateSeuratObject(counts = t0_nodox, project = "t0_nodox", min.cells = 3, min.features = 200)
+
+t0_dox <- Read10X(data.dir = "./S2/outs/filtered_feature_bc_matrix/")
+# Initialize the Seurat object with the raw (non-normalized data).
+t0_dox <- CreateSeuratObject(counts = t0_dox, project = "to_dox", min.cells = 3, min.features = 200)
+
+```
+```{r}
+# Load t0
+t1_nodox <- Read10X(data.dir = "./S3/outs/filtered_feature_bc_matrix/")
+# Initialize the Seurat object with the raw (non-normalized data).
+t1_nodox <- CreateSeuratObject(counts = t1_nodox, project = "t1_nodox", min.cells = 3, min.features = 200)
+
+t1_dox <- Read10X(data.dir = "./S4/outs/filtered_feature_bc_matrix/")
+# Initialize the Seurat object with the raw (non-normalized data).
+t1_dox <- CreateSeuratObject(counts = t1_dox, project = "t1_dox", min.cells = 3, min.features = 200)
+```
+
+```{r}
+# Load t0
+t2_nodox <- Read10X(data.dir = "./S5/outs/filtered_feature_bc_matrix/")
+# Initialize the Seurat object with the raw (non-normalized data).
+t2_nodox <- CreateSeuratObject(counts = t2_nodox, project = "t2_nodox", min.cells = 3, min.features = 200)
+
+t2_dox <- Read10X(data.dir = "./S6/outs/filtered_feature_bc_matrix/")
+# Initialize the Seurat object with the raw (non-normalized data).
+t2_dox <- CreateSeuratObject(counts = t2_dox, project = "t2_dox", min.cells = 3, min.features = 200)
+```
+
+
+```{r}
+#Compute percent mitochondrial
+t0_nodox[["percent.mt"]] <- PercentageFeatureSet(t0_nodox, pattern = "^mt-")
+t0_dox[["percent.mt"]] <- PercentageFeatureSet(t0_dox, pattern = "^mt-")
+
+t1_nodox[["percent.mt"]] <- PercentageFeatureSet(t1_nodox, pattern = "^mt-")
+t1_dox[["percent.mt"]] <- PercentageFeatureSet(t1_dox, pattern = "^mt-")
+
+t2_nodox[["percent.mt"]] <- PercentageFeatureSet(t2_nodox, pattern = "^mt-")
+t2_dox[["percent.mt"]] <- PercentageFeatureSet(t2_dox, pattern = "^mt-")
+
+
+#Plot summary stats
+pdf("summary_plots_before_filter.pdf")
+print(VlnPlot(t0_nodox, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+print(VlnPlot(t0_dox, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+
+print(VlnPlot(t1_nodox, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+print(VlnPlot(t1_dox, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+
+print(VlnPlot(t2_nodox, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+print(VlnPlot(t2_dox, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+
+plot1 <- FeatureScatter(t0_nodox, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(t0_nodox, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+
+plot1 <- FeatureScatter(t0_dox, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(t0_dox, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+
+plot1 <- FeatureScatter(t1_nodox, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(t1_nodox, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+
+plot1 <- FeatureScatter(t1_dox, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(t1_dox, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+
+plot1 <- FeatureScatter(t2_nodox, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(t2_nodox, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+
+plot1 <- FeatureScatter(t2_dox, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(t2_dox, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+dev.off()
+```
+
+# Filter ***** IMPORTANT  *** Only keep cells with greater than 200 and less than 8000 genes and percent mt < 20
+
+```{r}
+#These filters are the same as in the Seurat tutorial.
+t0_nodox <- subset(t0_nodox, subset = nFeature_RNA > 2000 & nFeature_RNA < 8000 & percent.mt < 20 & nCount_RNA > 10000)
+t0_dox <- subset(t0_dox, subset = nFeature_RNA > 2000 & nFeature_RNA < 8000 & percent.mt < 20 & nCount_RNA > 10000)
+t1_nodox <- subset(t1_nodox, subset = nFeature_RNA > 2000 & nFeature_RNA < 8000 & percent.mt < 20 & nCount_RNA > 10000)
+t1_dox <- subset(t1_dox, subset = nFeature_RNA > 2000 & nFeature_RNA < 8000 & percent.mt < 20 & nCount_RNA > 10000)
+t2_nodox <- subset(t2_nodox, subset = nFeature_RNA > 2000 & nFeature_RNA < 8000 & percent.mt < 20 & nCount_RNA > 10000)
+t2_dox <- subset(t2_dox, subset = nFeature_RNA > 2000 & nFeature_RNA < 8000 & percent.mt < 20 & nCount_RNA > 10000)
+
+#Normalize ****important***
+t0_nodox <- NormalizeData(t0_nodox, normalization.method = "LogNormalize", scale.factor = 10000)
+t0_dox <- NormalizeData(t0_dox, normalization.method = "LogNormalize", scale.factor = 10000)
+
+t1_nodox <- NormalizeData(t1_nodox, normalization.method = "LogNormalize", scale.factor = 10000)
+t1_dox <- NormalizeData(t1_dox, normalization.method = "LogNormalize", scale.factor = 10000)
+
+t2_nodox <- NormalizeData(t2_nodox, normalization.method = "LogNormalize", scale.factor = 10000)
+t2_dox <- NormalizeData(t2_dox, normalization.method = "LogNormalize", scale.factor = 10000)
+
+all_samples <- merge(t0_nodox, y = c(t0_dox, t1_nodox, t1_dox, t2_nodox, t2_dox), project = "prrx-c1-timecourse", merge.data = TRUE)
+nodox_all_samples <- merge(t0_nodox, y = c(t1_nodox, t2_nodox), project = "prrx-c1-timecourse-nodox", merge.data = TRUE)
+dox_all_samples <- merge(t0_dox, y = c(t1_dox, t2_dox), project = "prrx-c1-timecourse-dox", merge.data = TRUE)
+t0_all_samples <- merge(t0_dox, y = c(t0_nodox), project = "prrx-c1-t0", merge.data = TRUE)
+
+print(all_samples)
+```
+```{r}
+#Scale the data, this is important to prevent dominance of genes with high mean levels.
+t0_nodox <- ScaleData(t0_nodox, features = rownames(t0_nodox))
+t0_dox <- ScaleData(t0_dox, features = rownames(t0_dox))
+
+t1_nodox <- ScaleData(t1_nodox, features = rownames(t1_nodox))
+t1_dox <- ScaleData(t1_dox, features = rownames(t1_dox))
+
+t2_nodox <- ScaleData(t2_nodox, features = rownames(t2_nodox))
+t2_dox <- ScaleData(t2_dox, features = rownames(t2_dox))
+
+all_samples <- ScaleData(all_samples, features = rownames(all_samples))
+nodox_all_samples <- ScaleData(nodox_all_samples, features = rownames(nodox_all_samples))
+dox_all_samples <- ScaleData(dox_all_samples, features = rownames(dox_all_samples))
+t0_all_samples <- ScaleData(t0_all_samples, features = rownames(t0_all_samples))
+
+
+#Plot summary stats
+pdf("summary_plots_after_filter.pdf")
+print(VlnPlot(t0_nodox, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+print(VlnPlot(t0_dox, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+print(VlnPlot(t1_nodox, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+print(VlnPlot(t1_dox, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+print(VlnPlot(t2_nodox, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+print(VlnPlot(t2_dox, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+
+
+plot1 <- FeatureScatter(t0_nodox, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(t0_nodox, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+plot1 <- FeatureScatter(t0_dox, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(t0_dox, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+
+plot1 <- FeatureScatter(t1_nodox, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(t1_nodox, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+plot1 <- FeatureScatter(t1_dox, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(t1_dox, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+
+plot1 <- FeatureScatter(t2_nodox, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(t2_nodox, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+plot1 <- FeatureScatter(t2_dox, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(t2_dox, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+
+dev.off()
+```
+
+
+```{r run_pca}
+
+#Look at highly variable
+t0_nodox <- find_variable(t0_nodox, "t0_nodox_variable.pdf")
+t0_dox <- find_variable(t0_dox, "t0_dox_variable.pdf")
+
+t1_nodox <- find_variable(t1_nodox, "t1_nodox_variable.pdf")
+t1_dox <- find_variable(t1_dox, "t1_dox_variable.pdf")
+
+t2_nodox <- find_variable(t2_nodox, "t2_nodox_variable.pdf")
+t2_dox <- find_variable(t2_dox, "t2_dox_variable.pdf")
+
+all_samples <- find_variable(all_samples, "all_samples_variable.pdf")
+nodox_all_samples <- find_variable(nodox_all_samples, "nodox_all_samples_variable.pdf")
+dox_all_samples <- find_variable(dox_all_samples, "dox_all_samples_variable.pdf")
+t0_all_samples <- find_variable(t0_all_samples, "t0_all_samples_variable.pdf")
+
+#PCA
+t0_nodox <- RunPCA(t0_nodox, npcs = 10)
+t0_dox <- RunPCA(t0_dox, npcs = 10)
+
+t1_nodox <- RunPCA(t1_nodox, npcs = 10)
+t1_dox <- RunPCA(t1_dox, npcs = 10)
+
+t2_nodox <- RunPCA(t2_nodox, npcs = 10)
+t2_dox <- RunPCA(t2_dox, npcs = 10)
+
+all_samples <- RunPCA(all_samples)
+nodox_all_samples <- RunPCA(nodox_all_samples)
+dox_all_samples <- RunPCA(dox_all_samples)
+t0_all_samples <- RunPCA(t0_all_samples)
+
+
+#Plot the PCA
+pdf("allgenes_pca.pdf")
+print(VizDimLoadings(all_samples, dims = 1:2, reduction = "pca") + ggtitle("All samples"))
+print(VizDimLoadings(nodox_all_samples, dims = 1:2, reduction = "pca") + ggtitle("NoDox - All samples"))
+print(VizDimLoadings(dox_all_samples, dims = 1:2, reduction = "pca") + ggtitle("Dox - All samples"))
+print(VizDimLoadings(t0_all_samples, dims = 1:2, reduction = "pca") + ggtitle("t0 - All samples"))
+
+print(VizDimLoadings(t0_nodox, dims = 1:2, reduction = "pca"))
+print(VizDimLoadings(t0_dox, dims = 1:2, reduction = "pca"))
+
+print(VizDimLoadings(t1_nodox, dims = 1:2, reduction = "pca"))
+print(VizDimLoadings(t1_dox, dims = 1:2, reduction = "pca"))
+
+print(VizDimLoadings(t2_nodox, dims = 1:2, reduction = "pca"))
+print(VizDimLoadings(t2_dox, dims = 1:2, reduction = "pca"))
+
+print(DimPlot(all_samples, reduction = "pca", group.by = "orig.ident") + ggtitle("All samples"))
+print(DimPlot(nodox_all_samples, reduction = "pca", group.by = "orig.ident") + ggtitle("NoDox - All samples"))
+print(DimPlot(dox_all_samples, reduction = "pca", group.by = "orig.ident") + ggtitle("Dox - All samples"))
+print(DimPlot(t0_all_samples, reduction = "pca", group.by = "orig.ident") + ggtitle("t0 - All samples"))
+
+print(DimPlot(t0_nodox, reduction = "pca"))
+print(DimPlot(t0_dox, reduction = "pca"))
+
+print(DimPlot(t1_nodox, reduction = "pca"))
+print(DimPlot(t1_dox, reduction = "pca"))
+
+print(DimPlot(t2_nodox, reduction = "pca"))
+print(DimPlot(t2_dox, reduction = "pca"))
+
+dev.off()
+```
+
+
+
+
+
+```{r umap}
+# Seed has been set earlier
+#Run UMAP
+all_samples <- RunUMAP(all_samples, dims = 1:10, min.dist = 0.75)
+nodox_all_samples <- RunUMAP(nodox_all_samples, dims = 1:10, min.dist = 0.75)
+dox_all_samples <- RunUMAP(dox_all_samples, dims = 1:10, min.dist = 0.75)
+t0_all_samples <- RunUMAP(t0_all_samples, dims = 1:10, min.dist = 0.75)
+
+t0_nodox <- RunUMAP(t0_nodox, dims = 1:10, min.dist = 0.75)
+t0_dox <- RunUMAP(t0_dox, dims = 1:10, min.dist = 0.75)
+
+t1_nodox <- RunUMAP(t1_nodox, dims = 1:10, min.dist = 0.75)
+t1_dox <- RunUMAP(t1_dox, dims = 1:10, min.dist = 0.75)
+
+t2_nodox <- RunUMAP(t2_nodox, dims = 1:10, min.dist = 0.75)
+t2_dox <- RunUMAP(t2_dox, dims = 1:10, min.dist = 0.75)
+
+```
+
+```{r cell_cycle}
+convertHumanGeneList_mousename <- function(x){
+        require("biomaRt")
+        human = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+        mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+        genesV2 = getLDS(attributes = c("hgnc_symbol"), filters = "hgnc_symbol",
+                        values = x , mart = human, attributesL = c("mgi_symbol"),
+                        martL = mouse, uniqueRows=T)
+        mouseX <- unique(genesV2[, 2])
+        # Print the first 6 genes found to the screen
+        return(mouseX)
+}
+
+#Use cell-cycle genes from Seurat
+#s.genes <- cc.genes$s.genes
+#g2m.genes <- cc.genes$g2m.genes
+
+#Convert human gene names to mous
+#s.genes <- convertHumanGeneList_mousename(s.genes)
+#g2m.genes <- convertHumanGeneList_mousename(g2m.genes)
+#write.table(g2m.genes, file = "g2m_genes.tsv", row.name = F, sep = "\t", quote = F)
+#write.table(s.genes, file = "s_genes.tsv", row.name = F, sep = "\t", quote = F)
+
+s.genes <- read.table("../110919_seurat/s_genes.tsv", header = T, stringsAsFactors = F)$x
+g2m.genes <- read.table("../110919_seurat/g2m_genes.tsv", header = T, stringsAsFactors = F)$x
+cell_cycle_analysis <- function(sample, gene_subset, dimred_pdf) {
+    print(s.genes)
+    print(g2m.genes)
+
+    #Get a cell-cycle score for each cell
+    sample <- CellCycleScoring(sample, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+
+    pdf(dimred_pdf)
+    print(DimPlot(sample, reduction = "pca"))  
+    print(DimPlot(sample, reduction = "umap"))  
+    dev.off()
+
+    return(sample)
+}
+
+# Run cell-cycle analysis on all genes
+t0_nodox <- cell_cycle_analysis(t0_nodox, NULL, "t0_nodox_allgenes_cellcycle.pdf")
+t0_dox <- cell_cycle_analysis(t0_dox, NULL, "t0_dox_allgenes_cellcycle.pdf")
+
+t1_nodox <- cell_cycle_analysis(t1_nodox, NULL, "t1_nodox_allgenes_cellcycle.pdf")
+t1_dox <- cell_cycle_analysis(t1_dox, NULL, "t1_dox_allgenes_cellcycle.pdf")
+
+t2_nodox <- cell_cycle_analysis(t2_nodox, NULL, "t2_nodox_allgenes_cellcycle.pdf")
+t2_dox <- cell_cycle_analysis(t2_dox, NULL, "t2_dox_allgenes_cellcycle.pdf")
+
+all_samples <- cell_cycle_analysis(all_samples, NULL, "allsamples_allgenes_cellcycle.pdf")
+nodox_all_samples <- cell_cycle_analysis(nodox_all_samples, NULL, "nodox_allsamples_allgenes_cellcycle.pdf")
+dox_all_samples <- cell_cycle_analysis(dox_all_samples, NULL, "dox_allsamples_allgenes_cellcycle.pdf")
+t0_all_samples <- cell_cycle_analysis(t0_all_samples, NULL, "t0_allsamples_allgenes_cellcycle.pdf")
+
+
+```
+```{ignore_g2m_cells}
+all_samples <- all_samples[, all_samples@meta.data$Phase != "G2M"]
+nodox_all_samples <- nodox_all_samples[, nodox_all_samples@meta.data$Phase != "G2M"]
+dox_all_samples <- dox_all_samples[, dox_all_samples@meta.data$Phase != "G2M"]
+t0_all_samples <- t0_all_samples[, t0_all_samples@meta.data$Phase != "G2M"]
+
+t0_nodox <- t0_nodox[, t0_nodox@meta.data$Phase != "G2M"]
+t0_dox <- t0_dox[, t0_dox@meta.data$Phase != "G2M"]
+
+```
+
+```{r hedgehog_discrete}
+hedgehog_colors <- c('#feedde','#fdbe85','#fd8d3c','#d94701')
+compute_discrete_score <- function(sample, correlations_plot, feature_plot1, plot_identity = F) {
+  cutoff <- 0.1
+  
+  gfp <- GetAssayData(sample)["GFP-g1", ]
+  gli1 <- GetAssayData(sample)["Gli1", ]
+  gli2 <- GetAssayData(sample)["Gli2", ]
+  ptch1 <- GetAssayData(sample)["Ptch1", ]
+
+  gfp_discrete <- as.numeric(gfp > cutoff)
+  gli1_discrete <- as.numeric(gli1 > cutoff)
+  gli2_discrete <- as.numeric(gli2 > cutoff)
+  ptch1_discrete <- as.numeric(ptch1 > cutoff)
+  
+  #pdf(correlations_plot)
+  #scatterplot.density(gfp, gli1)
+  #scatterplot.density(gli2, gli1)
+  #scatterplot.density(ptch1, gli1)
+  #dev.off()
+  
+  print(table(gfp_discrete, gli1_discrete))
+  print(table(gfp_discrete, ptch1_discrete))
+  print(table(gfp_discrete, gli2_discrete))
+  print(table(gli2_discrete, gli1_discrete))
+  print(table(ptch1_discrete, gli1_discrete))
+  print(table(gli2_discrete, ptch1_discrete))
+  
+  hedgehog <- gfp_discrete + gli1_discrete + gli2_discrete + ptch1_discrete
+  
+  #AddMetaData(sample, hedgehog, col.name = "hedgehog")
+  sample[["hedgehog"]] <- hedgehog
+  
+  # Plot the histogram of hedgehog scores
+  pdf(feature_plot1)
+  hist(hedgehog, breaks = 100)
+  if(plot_identity) {
+    print(DimPlot(sample, reduction = "umap", group.by = "orig.ident") + ggtitle(label = "UMAP"))
+  }
+  #print(DimPlot(sample, reduction = "umap", group.by = "Phase") + ggtitle(label = "UMAP"))
+  print(FeaturePlot(sample, features = "hedgehog", reduction = "umap", cols = hedgehog_colors))
+  if(plot_identity) {
+    print(DimPlot(sample, reduction = "pca", group.by = "orig.ident") + ggtitle(label = "PCA"))
+  }
+  #print(DimPlot(sample, reduction = "pca", group.by = "Phase") + ggtitle(label = "PCA"))
+  print(FeaturePlot(sample, features = "hedgehog", reduction = "pca", cols = hedgehog_colors))
+  dev.off()
+  return(sample)
+}
+t0_nodox <- compute_discrete_score(t0_nodox, "t0_nodox_hhcorrelations.pdf", "t0_nodox_hedgehogfeature.pdf")
+t1_nodox <- compute_discrete_score(t1_nodox, "t1_nodox_hhcorrelations.pdf", "t1_nodox_hedgehogfeature.pdf")
+t2_nodox <- compute_discrete_score(t2_nodox, "t2_nodox_hhcorrelations.pdf", "t2_nodox_hedgehogfeature.pdf")
+t0_dox <- compute_discrete_score(t0_dox, "t0_dox_hhcorrelations.pdf", "t0_dox_hedgehogfeature.pdf")
+t1_dox <- compute_discrete_score(t1_dox, "t1_dox_hhcorrelations.pdf", "t1_dox_hedgehogfeature.pdf")
+t2_dox <- compute_discrete_score(t2_dox, "t2_dox_hhcorrelations.pdf", "t2_dox_hedgehogfeature.pdf")
+
+
+all_samples <- compute_discrete_score(all_samples, "all_samples_hhcorrelations.pdf", "allsamples_hedgehogfeature.pdf", plot_identity = T)
+nodox_all_samples <- compute_discrete_score(nodox_all_samples, "nodox_all_samples_hhcorrelations.pdf", "nodox_allsamples_hedgehogfeature.pdf", plot_identity = T)
+dox_all_samples <- compute_discrete_score(dox_all_samples, "dox_all_samples_hhcorrelations.pdf", "dox_allsamples_hedgehogfeature.pdf", plot_identity = T)
+t0_all_samples <- compute_discrete_score(t0_all_samples, "t0_all_samples_hhcorrelations.pdf", "t0_allsamples_hedgehogfeature.pdf", plot_identity = T)
+
+```
+
+
+
+
+```{r cluster_based_on_allgenes}
+all_samples <- FindNeighbors(all_samples, dims = 1:10)
+all_samples <- FindClusters(all_samples, resolution = 0.5, algorithm = 1) #Use the Louvain algorithm
+
+nodox_all_samples <- FindNeighbors(nodox_all_samples, dims = 1:10)
+nodox_all_samples <- FindClusters(nodox_all_samples, resolution = 0.25, algorithm = 1) #Use the Louvain algorithm
+
+dox_all_samples <- FindNeighbors(dox_all_samples, dims = 1:10)
+dox_all_samples <- FindClusters(dox_all_samples, resolution = 0.25, algorithm = 1) #Use the Louvain algorithm
+
+t0_all_samples <- FindNeighbors(t0_all_samples, dims = 1:10)
+t0_all_samples <- FindClusters(t0_all_samples, resolution = 0.25, algorithm = 1) #Use the Louvain algorithm
+
+t0_nodox <- FindNeighbors(t0_nodox, dims = 1:10)
+t0_nodox <- FindClusters(t0_nodox, resolution = 0.1, algorithm = 1) #Use the Louvain algorithm
+
+t0_dox <- FindNeighbors(t0_dox, dims = 1:10)
+t0_dox <- FindClusters(t0_dox, resolution = 0.2, algorithm = 1) #Use the Louvain algorithm
+
+
+```
+
+```{r plot_umap}
+plot_allsamples_umap <- function(all_samples, output) {
+  pdf(output)
+  print(DimPlot(all_samples, reduction = "umap") + ggtitle(label = ""))
+  print(DimPlot(all_samples, reduction = "umap",  group.by  = "orig.ident"))
+  print(DimPlot(all_samples, reduction = "umap", pt.size = 1.0,  group.by  = "orig.ident"))
+  print(DimPlot(all_samples, reduction = "umap", group.by = "Phase") + ggtitle(label = "cell-cycle"))
+  print(FeaturePlot(all_samples, features = "GFP-g1", reduction = "umap") + ggtitle("GFP-g1"))
+  print(FeaturePlot(all_samples, features = "hedgehog", reduction = "umap",  min.cutoff = 1, max.cutoff = 4) + ggtitle("hedgehog"))
+  print(FeaturePlot(all_samples, features = "Gli2", reduction = "umap") + ggtitle("Gli2"))
+  print(FeaturePlot(all_samples, features = "Prrx1", reduction = "umap", min.cutoff = 1) + ggtitle("Prrx1"))
+  print(FeaturePlot(all_samples, features = "nFeature_RNA", reduction = "umap") + ggtitle("nFeature_RNA"))
+  print(FeaturePlot(all_samples, features = "nCount_RNA", reduction = "umap") + ggtitle("nCount_RNA"))
+  dev.off()
+}
+
+plot_allsamples_umap(all_samples, "all_samples_umap.pdf")
+plot_allsamples_umap(nodox_all_samples, "nodox_all_samples_umap.pdf")
+plot_allsamples_umap(dox_all_samples, "dox_all_samples_umap.pdf")
+plot_allsamples_umap(t0_all_samples, "t0_all_samples_umap.pdf")
+
+plot_allsamples_umap(t0_dox, "t0_dox_umap.pdf")
+plot_allsamples_umap(t0_nodox, "t0_nodox_umap.pdf")
+plot_allsamples_umap(t1_dox, "t1_dox_umap.pdf")
+plot_allsamples_umap(t1_nodox, "t1_nodox_umap.pdf")
+plot_allsamples_umap(t2_dox, "t2_dox_umap.pdf")
+plot_allsamples_umap(t2_nodox, "t2_nodox_umap.pdf")
+
+
+pdf("umap.pdf")
+print(DimPlot(t0_nodox, reduction = "umap") + ggtitle(label = "t0_nodox UMAP"))
+print(FeaturePlot(t0_nodox, features = "GFP-g1", reduction = "umap") + ggtitle("t0_nodox GFP-g1"))
+print(FeaturePlot(t0_nodox, features = "hedgehog", reduction = "umap") + ggtitle("t0_nodox hedgehog"))
+print(FeaturePlot(t0_nodox, features = "Gli2", reduction = "umap") + ggtitle("t0_nodox Gli2"))
+
+print(DimPlot(t0_dox, reduction = "umap") + ggtitle(label = "t0_dox UMAP"))
+print(FeaturePlot(t0_dox, features = "GFP-g1", reduction = "umap") + ggtitle("t0_dox GFP-g1"))
+print(FeaturePlot(t0_dox, features = "hedgehog", reduction = "umap") + ggtitle("t0_dox hedgehog"))
+print(FeaturePlot(t0_dox, features = "Gli2", reduction = "umap") + ggtitle("t0_dox Gli2"))
+
+print(DimPlot(t1_nodox, reduction = "umap") + ggtitle(label = "t1_nodox UMAP"))
+print(FeaturePlot(t1_nodox, features = "GFP-g1", reduction = "umap") + ggtitle("t1_nodox GFP-g1"))
+print(FeaturePlot(t1_nodox, features = "hedgehog", reduction = "umap",  min.cutoff = 1, max.cutoff = 4) + ggtitle("t1_nodox hedgehog"))
+
+print(DimPlot(t1_dox, reduction = "umap") + ggtitle(label = "t1_dox UMAP"))
+print(FeaturePlot(t1_dox, features = "GFP-g1", reduction = "umap") + ggtitle("t1_dox GFP-g1"))
+print(FeaturePlot(t1_dox, features = "hedgehog", reduction = "umap",  min.cutoff = 1, max.cutoff = 4) + ggtitle("t1_dox hedgehog"))
+
+print(DimPlot(t2_nodox, reduction = "umap") + ggtitle(label = "t2_nodox UMAP"))
+print(FeaturePlot(t2_nodox, features = "GFP-g1", reduction = "umap") + ggtitle("t2_nodox GFP-g1"))
+print(FeaturePlot(t2_nodox, features = "hedgehog", reduction = "umap",  min.cutoff = 1, max.cutoff = 4) + ggtitle("t2_nodox hedgehog"))
+
+print(DimPlot(t2_dox, reduction = "umap") + ggtitle(label = "t2_dox UMAP"))
+print(FeaturePlot(t2_dox, features = "GFP-g1", reduction = "umap") + ggtitle("t2_dox GFP-g1"))
+print(FeaturePlot(t2_dox, features = "hedgehog", reduction = "umap",  min.cutoff = 1, max.cutoff = 4) + ggtitle("t2_dox hedgehog"))
+dev.off()
+
+pdf("cellcycle.pdf")
+print(DimPlot(all_samples, reduction = "umap", group.by = "Phase"))
+print(DimPlot(nodox_all_samples, reduction = "umap", group.by = "Phase"))
+print(DimPlot(dox_all_samples, reduction = "umap", group.by = "Phase"))
+print(DimPlot(t0_all_samples, reduction = "umap", group.by = "Phase"))
+dev.off()
+```
+
+```{r t0}
+library(Seurat)
+library(ggplot2)
+t0_all_samples <- FindNeighbors(t0_all_samples, dims = 1:10)
+t0_all_samples <- FindClusters(t0_all_samples, resolution = 0.2, algorithm = 1) #Use the Louvain algorithm
+print(DimPlot(t0_all_samples, reduction = "umap") + ggtitle(label = "t0_all_samples UMAP"))
+print(DimPlot(t0_all_samples, reduction = "umap",  group.by = "orig.ident") + ggtitle(label = "t0_all_samples UMAP"))
+print(DimPlot(t0_all_samples, reduction = "umap",  group.by = "Phase") + ggtitle(label = "t0_all_samples UMAP"))
+
+FeaturePlot(t0_all_samples, features = "GFP-g1", reduction = "umap", min.cutoff = 1, max.cutoff = 4) + ggtitle("t0_all_samples GFP-g1")
+FeaturePlot(t0_all_samples, features = "hedgehog", reduction = "umap", min.cutoff = 1, max.cutoff = 4) + ggtitle("t0_all_samples hedgehog")
+FeaturePlot(t0_all_samples, features = "Prrx1", reduction = "umap") + ggtitle("prrx1")
+```
+
+```{r save_and_load}
+save(all_samples, file = "all_samples.Robject")
+save(nodox_all_samples, file = "nodox_all_samples.Robject")
+save(dox_all_samples, file = "dox_all_samples.Robject")
+save(t0_all_samples, file = "t0_all_samples.Robject")
+
+save(t0_nodox, file = "t0_nodox.Robject")
+save(t0_dox, file = "t0_dox.Robject")
+save(t1_nodox, file = "t1_nodox.Robject")
+save(t1_dox, file = "t1_dox.Robject")
+save(t2_nodox, file = "t2_nodox.Robject")
+save(t2_dox, file = "t2_dox.Robject")
+
+save_all_df <- function() {
+  save(all_samples, file = "all_samples.Robject")
+  save(nodox_all_samples, file = "nodox_all_samples.Robject")
+  save(dox_all_samples, file = "dox_all_samples.Robject")
+  save(t0_all_samples, file = "t0_all_samples.Robject")
+
+  save(t0_nodox, file = "t0_nodox.Robject")
+  save(t0_dox, file = "t0_dox.Robject")
+  save(t1_nodox, file = "t1_nodox.Robject")
+  save(t1_dox, file = "t1_dox.Robject")
+  save(t2_nodox, file = "t2_nodox.Robject")
+  save(t2_dox, file = "t2_dox.Robject")
+}
+
+load_all_df <- function() {
+  load(file = "all_samples.Robject")
+  load(file = "t0_nodox.Robject")
+  load(file = "t0_dox.Robject")
+  load(file = "t1_nodox.Robject")
+  load(file = "t1_dox.Robject")
+  load(file = "t2_nodox.Robject")
+  load(file = "t2_dox.Robject")
+}
+```
+
+```{r find de genes in competent cells}
+print(DimPlot(nodox_all_samples, reduction = "umap", label = T) + ggtitle(label = ""))
+print(DimPlot(nodox_all_samples, reduction = "umap", group.by = "orig.ident", label = T) + ggtitle(label = ""))
+
+responder_degenes <- FindMarkers(all_samples, ident.1 = c("1"), ident.2 = "3", logfc.threshold = 0.1)
+responder_degenes$gene = rownames(responder_degenes)
+write.table(responder_degenes, "responder_degenes_test.tsv", sep = "\t", row.names = F, quote = F)
+
+responder_degenes_stringent <- FindMarkers(all_samples, ident.1 = c("1"), ident.2 = "3", logfc.threshold = 0.2)
+responder_degenes_stringent$gene = rownames(responder_degenes_stringent)
+write.table(responder_degenes_stringent, "responder_degenes_test_stringent.tsv", sep = "\t", row.names = F, quote = F)
+```
+
+```{r prrx1 plot}
+print(FeaturePlot(nodox_all_samples, features = "Prrx1", reduction = "umap", cols = hedgehog_colors))
+print(FeaturePlot(t0_all_samples, features = "Prrx1", reduction = "umap", cols = hedgehog_colors))
+print(FeaturePlot(dox_all_samples, features = "Prrx1", reduction = "umap", cols = hedgehog_colors))
+
+```
+
+```{r competent genes}
+#competent_genes <- read.table("../110821_seurat_originaldataset_v2/response_de_genes_lfc0.2.tsv", head = T)
+competent_genes <- read.table("top_300_genes.tsv", head = T)
+
+print(nrow(competent_genes))
+print(head(competent_genes))
+
+```
+
+```{r mark competent signature}
+#competent_marker_genes <- read.table("../110821_seurat_originaldataset_v2/competent_marker_genes.tsv")
+#competent_marker_genes$gene <-competent_genes$g
+print(head(competent_genes))
+#keep top signature genes
+competent_genes <- competent_genes[1:20, ]
+  
+  compute_competent_marker_signature <- function(sample) {
+    competent_expression = 0
+    for (marker1 in competent_genes$gene) {
+      cutoff <- 1
+      #print(marker1)
+      marker_expression <- GetAssayData(sample)[marker1, ]
+      #hist(marker_expression, xlab = marker1)
+      marker_expression_discrete <- as.numeric(marker_expression > cutoff)
+      competent_expression = competent_expression + marker_expression_discrete
+    }
+    sample[["competent_score"]] <- competent_expression
+    return(sample)
+  }
+```
+
+```{r plot competent score}
+pdf("marker_expression_histogram")  
+all_samples <- compute_competent_marker_signature(all_samples)
+t0_all_samples <- compute_competent_marker_signature(t0_all_samples)
+t0_nodox <- compute_competent_marker_signature(t0_nodox)
+t0_dox <- compute_competent_marker_signature(t0_dox)
+t1_nodox <- compute_competent_marker_signature(t1_nodox)
+t1_dox <- compute_competent_marker_signature(t1_dox)
+t2_nodox <- compute_competent_marker_signature(t2_nodox)
+t2_dox <- compute_competent_marker_signature(t2_dox)
+dev.off()
+
+```
+
+```{r competent score by cluster}
+
+print_score_per_cluster <- function(sample) {
+  print(str(sample))
+  for (cluster in sort(unique(sample@meta.data$seurat_clusters))) {
+    print(cluster)
+    cluster_cells  <- t0_nodox[, t0_nodox@meta.data$seurat_clusters %in% c(cluster)]
+    cluster_cells <- compute_competent_marker_signature(cluster_cells)
+    print(mean(cluster_cells@meta.data$competent_score))
+  }
+}
+print_score_per_cluster(t0_nodox)
+print_score_per_cluster(t0_dox)
+
+```
+
+```{r competent continued}
+pdf("competent_score_featureplot.pdf")
+FeaturePlot(all_samples, features = "competent_score", reduction = "umap", min.cutoff = 2) + ggtitle("all_samples")
+FeaturePlot(t0_nodox, features = "competent_score", reduction = "umap", min.cutoff = 2) + ggtitle("t0_nodox")
+FeaturePlot(t0_dox, features = "competent_score", reduction = "umap", min.cutoff = 2)+ ggtitle("t0_dox")
+FeaturePlot(t1_nodox, features = "competent_score", reduction = "umap", min.cutoff = 2)+ ggtitle("t1_nodox")
+FeaturePlot(t1_dox, features = "competent_score", reduction = "umap", min.cutoff = 2)+ ggtitle("t1_dox")
+FeaturePlot(t2_nodox, features = "competent_score", reduction = "umap", min.cutoff = 2)+ ggtitle("t2_nodox")
+FeaturePlot(t2_dox, features = "competent_score", reduction = "umap", min.cutoff = 2)+ ggtitle("t2_dox")
+dev.off()
+
+print(table(all_samples@meta.data$competent_score))
+print(prop.table(table(all_samples@meta.data$competent_score)))
+print(mean(all_samples@meta.data$competent_score))
+
+print(table(t0_nodox@meta.data$competent_score))
+print(prop.table(table(t0_nodox@meta.data$competent_score)))
+
+print(table(t0_dox@meta.data$competent_score))
+print(prop.table(table(t0_dox@meta.data$competent_score)))
+
+print(mean(t0_nodox@meta.data$competent_score))
+print(mean(t0_dox@meta.data$competent_score))
+print(mean(t1_nodox@meta.data$competent_score))
+print(mean(t1_dox@meta.data$competent_score))
+print(mean(t2_nodox@meta.data$competent_score))
+print(mean(t2_dox@meta.data$competent_score))
+
+
+```
+
+```{r}
+ print(table(all_samples@meta.data$orig.ident))
+```
+
+
+
+```{r monocle3 all genes}
+
+
+
+run_monocle <- function(samples) {
+  library(Seurat)
+  library(monocle3)
+  set.seed(300)
+  samples_notg2 <- samples[, samples@meta.data$Phase != "G2M"]
+  
+  my.so <- samples_notg2
+  my.so <- ProjectDim(my.so, reduction = "pca")
+  
+  # Create an expression matrix
+  expression_matrix <- my.so@assays$RNA@counts
+  
+  # Get cell metadata
+  cell_metadata <- my.so@meta.data
+  if (all.equal(colnames(expression_matrix), rownames(cell_metadata))) {
+    print(sprintf("Cell identifiers match"))
+  } else {
+    print(sprintf("Cell identifier mismatch - %i cells in expression matrix, %i cells in metadata",
+                  ncol(expression_matrix), nrow(cell_metadata)))
+    print("If the counts are equal, sort differences will throw this error")
+  }
+  
+  # get gene annotations
+  gene_annotation <- data.frame(gene_short_name = rownames(my.so@assays$RNA), row.names = rownames(my.so@assays$RNA))
+  if (all.equal(rownames(expression_matrix), rownames(gene_annotation))) {
+    print(sprintf("Gene identifiers all match"))
+  } else {
+    print(sprintf("Gene identifier mismatch - %i genes in expression matrix, %i gene in gene annotation",
+                  nrow(expression_matrix), nrow(gene_annotation)))
+    print("If the counts are equal, sort differences will throw this error")
+  }
+  
+  # Seurat-derived CDS
+  my.cds <- new_cell_data_set(expression_matrix,
+                              cell_metadata = cell_metadata,
+                              gene_metadata = gene_annotation)
+  
+  # Transfer Seurat embeddings
+  # Note that these may be calculated on the Integrated object, not the counts
+  #   and thus will involve fewer genes
+  reducedDim(my.cds, type = "PCA") <- my.so@reductions$pca@cell.embeddings 
+  my.cds@preprocess_aux$prop_var_expl <- my.so@reductions$pca@stdev
+  plot_pc_variance_explained(my.cds)
+  
+  # Transfer Seurat UMAP embeddings
+  my.cds@int_colData@listData$reducedDims$UMAP <- my.so@reductions$umap@cell.embeddings
+  #    plot_cells(my.cds)
+  
+  # Copy cluster info from Seurat
+  my.cds@clusters$UMAP_so$clusters <- my.so@meta.data$gt_tp_cell_type_integrated_.0.9
+  
+  my.cds <- cluster_cells(my.cds, reduction_method = "UMAP", resolution = NULL, verbose = TRUE)
+  #decreasing resolution reduces the number of clusters.
+  
+  # Fix from https://gitmemory.com/cole-trapnelwsql-lab
+  rownames(my.cds@principal_graph_aux$UMAP$dp_mst) <- NULL
+  colnames(my.cds@int_colData@listData$reducedDims$UMAP) <- NULL
+  
+  ## Step 5: Learn a graph
+  #my.cds <- learn_graph(my.cds, use_partition = T, close_loop = F)
+  my.cds <- learn_graph(my.cds, use_partition = T, close_loop = F, learn_graph_control = list(minimal_branch_len = 20, rann.k = NULL), verbose =  TRUE)
+  return(my.cds)
+}
+
+```
+
+```{r plot monocle}
+
+
+plot_monocle <- function(my.so, my.cds, output_prefix) {
+  library(ggplot2)
+  ## Step 6: Order cells according to pseudotime
+  #cds <- order_cells(cds)
+  #output_prefix = "all_samples"
+  save(my.cds, file = paste(output_prefix, "cds_v3.Robject", sep = "_"))
+  
+  
+  print(paste(output_prefix, "_monocle3.pdf", sep = ""))
+  pdf(paste(output_prefix, "_monocle3.pdf", sep = ""))
+  
+  print(DimPlot(my.so, reduction = "umap") + ggtitle("colored by seurat cluster"))
+  print(plot_cells(my.cds, color_cells_by = "partition", group_label_size = 3.5, show_trajectory_graph = FALSE) + ggtitle("colored by partition"))
+  print(plot_cells(my.cds, color_cells_by = "orig.ident", show_trajectory_graph = FALSE, group_label_size = 3.5))
+  print(plot_cells(my.cds,
+             cell_size = 0.5,
+             color_cells_by = "orig.ident",
+             label_groups_by_cluster=FALSE,
+             label_leaves=FALSE,
+             label_cell_groups = F,
+             trajectory_graph_color = "black",
+             label_branch_points=FALSE))
+  print(plot_cells(my.cds,
+             cell_size = 0.5,
+             color_cells_by = "hedgehog",
+             label_groups_by_cluster=FALSE,
+             label_leaves=FALSE,
+             trajectory_graph_color = "black",
+             label_branch_points=FALSE))
+  print(plot_cells(my.cds,
+             cell_size = 0.5,
+             label_groups_by_cluster=FALSE,
+             label_leaves=FALSE,
+             trajectory_graph_color = "black",
+             label_branch_points=FALSE))
+  print(plot_cells(my.cds,
+             cell_size = 0.5,
+             color_cells_by = "Phase",
+             label_groups_by_cluster=FALSE,
+             label_leaves=FALSE,
+             label_branch_points=FALSE))
+  print(plot_cells(my.cds,
+             cell_size = 0.5,
+             color_cells_by = "seurat_clusters",
+             label_groups_by_cluster =FALSE,
+             group_label_size = 5,
+             label_leaves=FALSE,
+             label_branch_points=FALSE))
+  
+  dev.off()
+  save(my.cds, file = paste(output_prefix, "_my_cds_120121.Robject", sep = ""))
+  
+  
+  pdf(paste(output_prefix, "_monocle3_seuratclusters.pdf", sep = ""))
+  print(plot_cells(my.cds,
+             cell_size = 0.5,
+             color_cells_by = "seurat_clusters",
+             label_cell_groups = FALSE,
+             label_groups_by_cluster =TRUE,
+             group_label_size = 5,
+             label_leaves=FALSE,
+             label_branch_points=FALSE)  + theme(axis.text=element_text(size=12, face="bold"),
+                                                 axis.title=element_text(size=14,face="bold"), legend.title = element_text(size=14, face="bold"), legend.text = element_text(size=12, face="bold")))
+  
+  dev.off()
+  
+  pdf(paste(output_prefix, "_monocle3_origident.pdf", sep = ""))
+  print(plot_cells(my.cds,
+             cell_size = 0.5,
+             color_cells_by = "orig.ident",
+             label_cell_groups = FALSE,
+             label_groups_by_cluster =TRUE,
+             group_label_size = 5,
+             label_leaves=FALSE,
+             label_branch_points=FALSE) + theme(axis.text=element_text(size=12, face="bold"),
+                                                axis.title=element_text(size=14,face="bold"), legend.title = element_text(size=14, face="bold"), legend.text = element_text(size=12, face="bold")))
+  dev.off()
+  
+  pdf(paste(output_prefix, "_monocle3_origident_hedgehogexpression.pdf", sep = ""))
+  print(plot_cells(my.cds,
+             cell_size = 0.5,
+             color_cells_by = "hedgehog",
+             label_groups_by_cluster=FALSE,
+             label_leaves=FALSE,
+             trajectory_graph_color = "black",
+             label_branch_points=FALSE) + theme(axis.text=element_text(size=12, face="bold"),
+                                                axis.title=element_text(size=14,face="bold"), legend.title = element_text(size=14, face="bold"), legend.text = element_text(size=12, face="bold"))+
+      scale_colour_gradientn(colors  = c('#f1eef6','#bdc9e1','#74a9cf','#2b8cbe','#045a8d')))
+  dev.off()
+  
+  cbPalette <- c('#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6','#6a3d9a')
+  
+  pdf(paste(output_prefix, "_monocle3_origident_notrajectory.pdf", sep = ""))
+    print(DimPlot(my.so, reduction = "umap", group.by = "orig.ident") + theme(axis.text=element_text(size=12, face="bold"),axis.title=element_text(size=14,face="bold"), legend.title = element_text(size=14, face="bold"), legend.text = element_text(size=12, face="bold")) + scale_colour_manual(values=cbPalette))
+  dev.off()
+}
+```
+
+```{r}
+all_samples_cds <- run_monocle(all_samples)
+plot_monocle(all_samples, all_samples_cds, "all_samples")
+
+t0_all_samples_cds <- run_monocle(t0_all_samples)
+plot_monocle(t0_all_samples, t0_all_samples_cds, "t0_all_samples")
+```
+
+```{r}
+nodox_all_samples_cds <- run_monocle(nodox_all_samples)
+nodox_all_samples$orig.ident <- factor(x = nodox_all_samples$orig.ident, levels = c("t1_nodox", "t2_nodox", "t0_nodox"))
+plot_monocle(nodox_all_samples, nodox_all_samples_cds, "nodox_all_samples")
+
+dox_all_samples_cds <- run_monocle(dox_all_samples)
+plot_monocle(dox_all_samples, dox_all_samples_cds, "dox_all_samples")
+```
+
+
+```{r UMAP on just competent genes}
+DimPlot(all_samples)
+competent_genes <- read.table("top_300.tsv", head = T)
+
+all_samples_competent <- all_samples[(rownames(all_samples) %in% competent_genes$gene), ]
+all_samples_competent <- RunPCA(all_samples_competent, npcs = 10)
+all_samples_competent <- RunUMAP(all_samples_competent, dims = 1:10, min.dist = 0.75)
+DimPlot(all_samples_competent)
+DimPlot(all_samples_competent, group.by = "orig.ident")
+DimPlot(all_samples_competent, group.by = "orig.ident", reduction = "pca", label = T)
+DimPlot(all_samples_competent, group.by = "seurat_clusters", reduction = "pca")
+FeaturePlot(all_samples_competent, features = "hedgehog", reduction = "umap", cols = hedgehog_colors)
+```
+
+```{r de all genes}
+
+
+
+competent_genes <- read.table("top_300.tsv", head = T)
+
+
+
+DimPlot(t0_all_samples, label = T)
+de <- FindMarkers(t0_all_samples, ident.1 = paste(colnames(t0_dox), "_1", sep = ""), ident.2 = paste(colnames(t0_nodox), "_2", sep = ""), logfc.threshold = 0.2)
+de$gene <- rownames(de)
+print(nrow(de)) 
+print(nrow(competent_genes))
+print(sum(de$gene %in% competent_genes$gene)) 
+print(head(de))
+print(head(de[de$gene %in% competent_genes$gene, ]))
+#> print(nrow(de)) 
+#[1] 294
+#> print(nrow(competent_genes))
+#[1] 300
+#> print(sum(de$gene %in% competent_genes$gene)) 
+#[1] 86
+#> dim(t0_dox)
+# [1] 15823  2362
+# > dim(t0_nodox)
+# [1] 16681  4535
+# > dim(dox_all_samples)
+# [1] 17646  8021
+# 
+# 
+# Parameters: 86, 294, 300, 15823
+# 
+# expected number of successes = 5.574164191367
+# 
+# the results are over enriched 15.43 fold compared to expectations
+# 
+# hypergeometric p-value = 5.774691287222153e-80 
+mdec <-  merge(de, competent_genes, by = c("gene"))
+print(dim(mdec))
+print(head(mdec))
+print(sum(sign(mdec$avg_logFC.x) == sign(mdec$avg_logFC.y)))
+print(sum(sign(mdec$avg_logFC.x) != sign(mdec$avg_logFC.y)))
+#80 in same direction, 6 in opposite direction
+#
+#
+#
+look_at_de <- function(df, cells1, cells2) {
+  print(paste("number of cells1", length(cells1)))
+  print(paste("number of cells2", length(cells2)))
+  de <- FindMarkers(df, ident.1 = cells1, ident.2 = cells2, logfc.threshold = 0.2)
+  de$gene <- rownames(de)
+  print(paste("number of de genes", nrow(de)))
+  print(paste("number of competent genes", nrow(competent_genes)))
+  print(paste("number of degenes in competent genes", sum(de$gene %in% competent_genes$gene)))
+  print("head of degenes")
+  print(head(de))
+  #print(head(de[de$gene %in% competent_genes$gene, ]))
+
+  mdec <-  merge(de, competent_genes, by = c("gene"))
+  print(paste("nrow of merged de competent", dim(mdec)))
+  #print(pasthead(mdec))
+  print(paste("number merged in same direction", sum(sign(mdec$avg_logFC.x) == sign(mdec$avg_logFC.y))))
+  print(paste("number merged in opposite direction", sum(sign(mdec$avg_logFC.x) != sign(mdec$avg_logFC.y))))
+  print(paste("same direction genes"))
+  print(mdec[(sign(mdec$avg_logFC.x) == sign(mdec$avg_logFC.y)), ])
+}
+#Now see for each of the clusters, competent in no-dox and competent in dox, how many overlap with the fast responder signature and how many have the same direction of effect.
+#
+DimPlot(nodox_all_samples, label = T)
+DimPlot(dox_all_samples, label = T)
+
+
+
+
+
+t0_nodox_competent_cells  <- nodox_all_samples[, nodox_all_samples@meta.data$orig.ident == "t0_nodox" & nodox_all_samples@meta.data$seurat_clusters %in% c(1)]
+t0_nodox_noncompetent_cells  <- nodox_all_samples[, nodox_all_samples@meta.data$orig.ident == "t0_nodox" & nodox_all_samples@meta.data$seurat_clusters %in% c(3)]
+print(DimPlot(nodox_all_samples, reduction = "umap", cells.highlight = colnames(t0_nodox_competent_cells))+ ggtitle("competent"))
+print(DimPlot(nodox_all_samples, reduction = "umap", cells.highlight = colnames(t0_nodox_noncompetent_cells))+ ggtitle("non-competent"))
+look_at_de(nodox_all_samples, colnames(t0_nodox_competent_cells), colnames(t0_nodox_noncompetent_cells))
+#
+# [1] "number of cells1 2984"
+# [1] "number of cells2 1121"
+#   |++++++++++++++++++++++++++++++++++++++++++++++++++| 100% elapsed=06s  
+# [1] "number of de genes 303"
+# [1] "number of competent genes 300"
+# [1] "number of degenes in competent genes 72"
+# [1] "head of degenes c(0, 0, 6.98882049409526e-291, 6.12728262610385e-286, 1.75884972597413e-282, 2.06949934552184e-278)"                   
+# [2] "head of degenes c(-0.436012952650109, -0.64161368323297, -0.472656964045341, 0.73021299186441, -0.620504907852571, -0.555324934761924)"
+# [3] "head of degenes c(1, 1, 1, 0.995, 0.984, 0.998)"                                                                                       
+# [4] "head of degenes c(1, 1, 1, 0.997, 1, 1)"                                                                                               
+# [5] "head of degenes c(0, 0, 1.24743456999106e-286, 1.09365867593328e-281, 3.13937087589122e-278, 3.69384938182193e-274)"                   
+# [6] "head of degenes c(\"Rpl8\", \"Lgals1\", \"Ppia\", \"Rtraf\", \"Ran\", \"Txn1\")"                                                       
+# [1] "nrow of merged de competent 72" "nrow of merged de competent 12"
+# [1] "number merged in same direction 47"
+# [1] "number merged in opposite direction 25"
+
+#USED IN PAPER  - cluster 4 is fast responder, cluster 5 is slow, using all_samples
+t0_nodox_competent_cells  <- all_samples[, all_samples@meta.data$orig.ident == "t0_nodox" & all_samples@meta.data$seurat_clusters %in% c(4)]
+t0_nodox_noncompetent_cells  <- all_samples[, all_samples@meta.data$orig.ident == "t0_nodox" & all_samples@meta.data$seurat_clusters %in% c(5)]
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = colnames(t0_nodox_competent_cells))+ ggtitle("competent"))
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = colnames(t0_nodox_noncompetent_cells))+ ggtitle("non-competent"))
+look_at_de(all_samples, colnames(t0_nodox_competent_cells), colnames(t0_nodox_noncompetent_cells)) 
+# 
+# [1] "number of cells1 1832"
+# [1] "number of cells2 1096"
+#   |++++++++++++++++++++++++++++++++++++++++++++++++++| 100% elapsed=09s  
+# [1] "number of de genes 396"
+# [1] "number of competent genes 300"
+# [1] "number of degenes in competent genes 86" #Prrx1 is in here.
+# [1] "head of degenes c(0, 0, 1.1728532858965e-302, 4.04804738343927e-301, 8.56691225549069e-291, 9.39600990592957e-287)"                 
+# [2] "head of degenes c(1.8307234122162, -0.746517102782215, -0.454171571783808, -0.66830321109403, 0.791060259511577, -0.70624222415975)"
+# [3] "head of degenes c(0.959, 1, 1, 0.997, 0.996, 0.979)"                                                                                
+# [4] "head of degenes c(0.484, 1, 1, 1, 0.997, 1)"                                                                                        
+# [5] "head of degenes c(0, 0, 2.16942672292275e-298, 7.48767324514762e-297, 1.58462175989811e-286, 1.73797995229979e-282)"                
+# [6] "head of degenes c(\"Ctla2a\", \"Lgals1\", \"Rpl8\", \"Txn1\", \"Rtraf\", \"Ran\")"                                                  
+# [1] "nrow of merged de competent 86" "nrow of merged de competent 12"
+# [1] "number merged in same direction 50"
+# [1] "number merged in opposite direction 36"
+
+
+t0_dox_competent_cells1  <- dox_all_samples[, dox_all_samples@meta.data$orig.ident == "to_dox" & dox_all_samples@meta.data$seurat_clusters %in% c(4)]
+t0_dox_competent_cells2  <- dox_all_samples[, dox_all_samples@meta.data$orig.ident == "to_dox" & dox_all_samples@meta.data$seurat_clusters %in% c(5)]
+t0_dox_competent_cells3  <- dox_all_samples[, dox_all_samples@meta.data$orig.ident == "to_dox" & dox_all_samples@meta.data$seurat_clusters %in% c(3)]
+
+print(DimPlot(dox_all_samples, reduction = "umap", cells.highlight = colnames(t0_dox_competent_cells1)) + ggtitle("competent1"))
+print(DimPlot(dox_all_samples, reduction = "umap", cells.highlight = colnames(t0_dox_competent_cells2)) + ggtitle("competent2"))
+print(DimPlot(dox_all_samples, reduction = "umap", cells.highlight = colnames(t0_dox_competent_cells3)) + ggtitle("competent3"))
+
+look_at_de(all_samples, gsub("_1", "_2", colnames(t0_dox_competent_cells1)), gsub("_2", "_1", colnames(t0_nodox_noncompetent_cells)))
+# [1] "number of cells1 743"
+# [1] "number of cells2 1121"
+#   |++++++++++++++++++++++++++++++++++++++++++++++++++| 100% elapsed=09s  
+# [1] "number of de genes 638"
+# [1] "number of competent genes 300"
+# [1] "number of degenes in competent genes 130"
+# [1] "head of degenes c(1.30082755245937e-269, 1.56781566950014e-269, 4.6632965169171e-265, 3.15249713864304e-262, 6.92737660648546e-250, 5.27455420613524e-247)"
+# [2] "head of degenes c(-0.532429509645835, -0.585427678121015, 1.31205130464618, -0.435020305465155, -0.487504053650295, -0.455134859097898)"                   
+# [3] "head of degenes c(1, 1, 0.983, 1, 1, 1)"                                                                                                                   
+# [4] "head of degenes c(1, 1, 0.407, 1, 1, 1)"                                                                                                                   
+# [5] "head of degenes c(2.4061407237841e-265, 2.8999886438744e-265, 8.62569956734155e-261, 5.83117395734804e-258, 1.28135685090162e-245, 9.75634291508835e-243)" 
+# [6] "head of degenes c(\"Rps29\", \"Rpl38\", \"Gas1\", \"Rps28\", \"Rpl36\", \"Rpl37\")"                                                                        
+# [1] "nrow of merged de competent 130" "nrow of merged de competent 12" 
+# [1] "number merged in same direction 120"
+# [1] "number merged in opposite direction 10"
+look_at_de(all_samples, gsub("_1", "_2", colnames(t0_dox_competent_cells2)), gsub("_2", "_1", colnames(t0_nodox_noncompetent_cells)))
+# [1] "number of cells1 587"
+# [1] "number of cells2 1121"
+#   |++++++++++++++++++++++++++++++++++++++++++++++++++| 100% elapsed=03s  
+# [1] "number of de genes 281"
+# [1] "number of competent genes 300"
+# [1] "number of degenes in competent genes 79"
+# [1] "head of degenes c(8.88466152601983e-234, 1.02497766809367e-226, 1.13583128701204e-210, 5.48868457126279e-189, 1.11861065223739e-181, 2.70537557696885e-178)"
+# [2] "head of degenes c(-0.513390279080972, -0.467756369715782, -0.380238741417156, -0.354014302874055, 0.690393521210543, 0.865220712111137)"                    
+# [3] "head of degenes c(1, 1, 1, 1, 0.647, 0.94)"                                                                                                                 
+# [4] "head of degenes c(1, 1, 1, 1, 0.023, 0.407)"                                                                                                                
+# [5] "head of degenes c(1.64339584246789e-229, 1.89590119267286e-222, 2.10094713158618e-206, 1.01524198514648e-184, 2.0690941234435e-177, 5.00413320471929e-174)" 
+# [6] "head of degenes c(\"Rpl38\", \"Rps29\", \"Rps28\", \"Rpl37\", \"Aspn\", \"Gas1\")"                                                                          
+# [1] "nrow of merged de competent 79" "nrow of merged de competent 12"
+# [1] "number merged in same direction 73"
+# [1] "number merged in opposite direction 6"
+look_at_de(all_samples, gsub("_1", "_2", colnames(t0_dox_competent_cells3)), gsub("_2", "_1", colnames(t0_nodox_noncompetent_cells)))
+# [1] "number of cells1 943"
+# [1] "number of cells2 1121"
+#   |++++++++++++++++++++++++++++++++++++++++++++++++++| 100% elapsed=09s  
+# [1] "number of de genes 775"
+# [1] "number of competent genes 300"
+# [1] "number of degenes in competent genes 122"
+# [1] "head of degenes c(0, 2.75825428212459e-306, 1.27734736597012e-303, 2.95483336911108e-301, 1.3549901031163e-291, 2.52544073987948e-289)" 
+# [2] "head of degenes c(-0.561059363644937, 1.24226818754938, 1.39019621925839, -0.553754377276191, 1.08790283501751, -0.443883983972078)"    
+# [3] "head of degenes c(1, 0.984, 0.999, 1, 0.829, 1)"                                                                                        
+# [4] "head of degenes c(1, 0.407, 0.946, 1, 0.023, 1)"                                                                                        
+# [5] "head of degenes c(0, 5.10194294564585e-302, 2.36270942283493e-299, 5.46555528284477e-297, 2.50632519373423e-287, 4.67130773655508e-285)"
+# [6] "head of degenes c(\"Rpl37\", \"Gas1\", \"Sptbn1\", \"Rpl38\", \"Aspn\", \"Rps29\")"                                                     
+# [1] "nrow of merged de competent 122" "nrow of merged de competent 12" 
+# [1] "number merged in same direction 97"
+# [1] "number merged in opposite direction 25"
+
+### Look at de from the all samples where there are two trajctory starts from cluster 5 and cluster4
+
+look_at_de(all_samples, colnames(all_samples[, all_samples@meta.data$seurat_clusters == "5"]), colnames(all_samples[, all_samples@meta.data$seurat_clusters == "4"]))
+#
+# [1] "number of cells1 1716"
+# [1] "number of cells2 1874"
+#   |++++++++++++++++++++++++++++++++++++++++++++++++++| 100% elapsed=08s  
+# [1] "number of de genes 394"
+# [1] "number of competent genes 300"
+# [1] "number of degenes in competent genes 86"
+# [1] "head of degenes c(0, 0, 0, 0, 0, 0)"                                                                                                
+# [2] "head of degenes c(0.967723204463911, 0.766146938262998, 0.708944193130516, 0.661971242632455, 0.650678507895877, 0.643335787019458)"
+# # [3] "head of degenes c(1, 1, 0.998, 0.999, 0.994, 1)"                                                                                    
+# [4] "head of degenes c(0.998, 1, 0.91, 0.978, 0.886, 0.988)"                                                                             
+# [5] "head of degenes c(0, 0, 0, 0, 0, 0)"                                                                                                
+# [6] "head of degenes c(\"S100a4\", \"Lgals1\", \"Hnrnpa1\", \"Ran\", \"Eif5a\", \"Atp5g1\")"                                             
+# [1] "nrow of merged de competent 86" "nrow of merged de competent 12"
+# [1] "number merged in same direction 52"
+# [1] "number merged in opposite direction 34"
+
+DimPlot(all_samples, cells.highlight = colnames(all_samples[, all_samples@meta.data$orig.ident == "t0_nodox"])) + ggtitle("t0 nodox")
+DimPlot(all_samples, cells.highlight = colnames(all_samples[, all_samples@meta.data$orig.ident == "t1_nodox"])) + ggtitle("t1 nodox")
+DimPlot(all_samples, cells.highlight = colnames(all_samples[, all_samples@meta.data$orig.ident == "t2_nodox"]))  + ggtitle("t2 nodox")
+DimPlot(all_samples, cells.highlight = colnames(all_samples[, all_samples@meta.data$orig.ident == "to_dox"]))  + ggtitle("t0 dox")
+DimPlot(all_samples, cells.highlight = colnames(all_samples[, all_samples@meta.data$orig.ident == "t1_dox"])) + ggtitle("t1 dox")
+DimPlot(all_samples, cells.highlight = colnames(all_samples[, all_samples@meta.data$orig.ident == "t2_dox"])) + ggtitle("t2 dox")
+
+
+look_at_de(all_samples, colnames(all_samples[, all_samples@meta.data$seurat_clusters == "5"]), colnames(all_samples[, all_samples@meta.data$seurat_clusters == "10"]))
+#> look_at_de(all_samples, colnames(all_samples[, all_samples@meta.data$seurat_clusters == "5"]), colnames(all_samples[, all_samples@meta.data$seurat_clusters == "10"]))
+# [1] "number of cells1 1716"
+# [1] "number of cells2 975"
+#   |++++++++++++++++++++++++++++++++++++++++++++++++++| 100% elapsed=17s  
+# [1] "number of de genes 562"
+# [1] "number of competent genes 300"
+# [1] "number of degenes in competent genes 112"
+# 
+ look_at_de(all_samples, colnames(all_samples[, all_samples@meta.data$seurat_clusters == "4"]), colnames(all_samples[, all_samples@meta.data$seurat_clusters == "10"]))
+
+```
+
+```{r degenes competent}
+t0_all_samples_competent <- t0_all_samples[rownames(t0_all_samples) %in% competent_genes$gene, ]
+t0_all_samples_competent <- RunPCA(t0_all_samples_competent, npcs = 10)
+t0_all_samples_competent <- RunUMAP(t0_all_samples_competent, dims = 1:10, min.dist = 0.75)
+t0_all_samples_competent <- FindNeighbors(t0_all_samples_competent, dims = 1:10)
+t0_all_samples_competent <- FindClusters(t0_all_samples_competent, resolution = 0.2, algorithm = 1) #Use the Louvain algorithm
+
+DimPlot(t0_all_samples_competent)
+DimPlot(t0_all_samples_competent, group.by = "orig.ident")
+DimPlot(t0_all_samples_competent, group.by = "orig.ident", reduction = "pca")
+DimPlot(t0_all_samples_competent, group.by = "seurat_clusters", reduction = "pca")
+
+
+de <- FindMarkers(t0_all_samples_competent, ident.1 = "0", ident.2 = "2", logfc.threshold = 0.2)
+de$gene <- rownames(de)
+print(nrow(de)) 
+print(nrow(competent_genes))
+print(sum(de$gene %in% competent_genes$gene)) 
+print(head(de))
+print(head(de[de$gene %in% competent_genes$gene, ]))
+
+
+de2 <- FindMarkers(t0_all_samples_competent, ident.1 = "0", ident.2 = "1", logfc.threshold = 0.2)
+de2$gene <- rownames(de2)
+print(nrow(de2)) 
+print(nrow(competent_genes))
+print(sum(de2$gene %in% competent_genes$gene)) 
+print(head(de2))
+print(head(de2[de2$gene %in% competent_genes$gene, ]))
+
+
+de3 <- FindMarkers(t0_all_samples_competent, ident.1 = "2", ident.2 = "1", logfc.threshold = 0.2)
+de3$gene <- rownames(de3)
+print(nrow(de3)) 
+print(nrow(competent_genes))
+print(sum(de3$gene %in% competent_genes$gene)) 
+print(head(de3))
+print(head(de3[de3$gene %in% competent_genes$gene, ]))
+
+print((rownames(t0_all_samples_competent) %in% competent_genes$gene))
+print(nrow(t0_all_samples_competent))
+
+
+t0_nodox_competent_cells  <- t0_all_samples_competent[, t0_all_samples_competent@meta.data$orig.ident == "t0_nodox" & t0_all_samples_competent@meta.data$seurat_clusters %in% c(0)]
+t0_nodox_noncompetent_cells  <- t0_all_samples_competent[, t0_all_samples_competent@meta.data$orig.ident == "t0_nodox" & t0_all_samples_competent@meta.data$seurat_clusters %in% c(2)]
+
+print(DimPlot(t0_all_samples, reduction = "umap", cells.highlight = colnames(t0_nodox_competent_cells))) 
+print(DimPlot(t0_all_samples, reduction = "umap", cells.highlight = colnames(t0_nodox_noncompetent_cells)))
+      
+print(DimPlot(all_samples, label = T))
+print(DimPlot(all_samples, group.by = "orig.ident"))
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = gsub("_2", "_1", colnames(t0_nodox_competent_cells))) + ggtitle("competent")) 
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = gsub("_2", "_1", colnames(t0_nodox_noncompetent_cells))) + ggtitle("non-competent"))
+print(FeaturePlot(all_samples, "hedgehog"))
+
+print(DimPlot(nodox_all_samples, label = T))
+print(DimPlot(nodox_all_samples, group.by = "orig.ident"))
+print(DimPlot(nodox_all_samples, reduction = "umap", cells.highlight = gsub("_2", "_1", colnames(t0_nodox_competent_cells)))+ ggtitle("competent")) 
+print(DimPlot(nodox_all_samples, reduction = "umap", cells.highlight = gsub("_2", "_1", colnames(t0_nodox_noncompetent_cells)))+ ggtitle("non-competent"))
+print(FeaturePlot(nodox_all_samples, "hedgehog"))
+
+
+print(DimPlot(all_samples_competent, reduction = "umap", cells.highlight = gsub("_2", "_1", colnames(t0_nodox_competent_cells))) + ggtitle("competent")) 
+print(DimPlot(all_samples_competent, reduction = "umap", cells.highlight = gsub("_2", "_1", colnames(t0_nodox_noncompetent_cells)))+ ggtitle("non-competent"))
+print(FeaturePlot(all_samples_competent, "hedgehog"))
+
+print(DimPlot(t0_all_samples_competent, reduction = "umap", cells.highlight = colnames(t0_nodox_noncompetent_cells)) + ggtitle("competent"))
+print(DimPlot(t0_all_samples_competent, reduction = "umap", cells.highlight = colnames(t0_nodox_competent_cells)) + ggtitle("non-competent"))
+
+
+#nodox_all_samples <- RunPCA(nodox_all_samples, npcs = 10)
+#nodox_all_samples <- RunUMAP(nodox_all_samples, dims = 1:10, min.dist = 0.75)
+#all_samples <- FindNeighbors(all_samples, dims = 1:10)
+#all_samples <- FindClusters(all_samples, resolution = 0.25, algorithm = 1) #Use the Louvain algorithm
+competent_vs_rest_genes <- read.table("./response_de_genes_competent_vs_rest.tsv") #marker for competent state
+dim(competent_vs_rest_genes)
+
+print(DimPlot(t0_all_samples, label = T))
+print(DimPlot(t0_all_samples, label = T, group.by = "orig.ident"))
+
+de <- FindMarkers(t0_all_samples, ident.1 = c("3"), ident.2 = c("4", "5"), logfc.threshold = 0.2)
+de$gene <- rownames(de)
+print(nrow(de)) 
+print(nrow(competent_genes))
+print(sum(de$gene %in% competent_genes$gene)) 
+print(head(de))
+print(head(de[de$gene %in% competent_genes$gene, ]))
+#> print(nrow(de)) 
+#[1] 222
+#> print(nrow(competent_genes))
+#[1] 301
+#> print(sum(de$gene %in% competent_genes$gene)) 
+#[1] 61
+
+print(DimPlot(dox_all_samples, label = T))
+print(DimPlot(dox_all_samples, label = T, group.by = "orig.ident"))
+de <- FindMarkers(t0_all_samples, ident.1 = c("0"), ident.2 = c("4", "5"), logfc.threshold = 0.2)
+de$gene <- rownames(de)
+print(nrow(de)) 
+print(nrow(competent_genes))
+print(sum(de$gene %in% competent_genes$gene)) 
+print(head(de))
+print(head(de[de$gene %in% competent_genes$gene, ]))
+#534
+#301
+#115
+
+de <- FindMarkers(t0_all_samples, ident.1 = c("2", "1"), ident.2 = c("4", "5"), logfc.threshold = 0.2)
+de$gene <- rownames(de)
+print(nrow(de)) 
+print(nrow(competent_genes))
+print(sum(de$gene %in% competent_genes$gene)) 
+print(head(de))
+print(head(de[de$gene %in% competent_genes$gene, ]))
+#341
+#301
+#90
+```
+
+
+```{r plot umap}
+
+plot_umaps <- function() {
+ print(plot_cells(my.cds,
+             cell_size = 0.5,
+             color_cells_by = "seurat_clusters",
+             label_groups_by_cluster =FALSE,
+             group_label_size = 5,
+             label_leaves=FALSE,
+             label_branch_points=FALSE)  + theme(axis.text=element_text(size=12, face="bold"),
+                                                 axis.title=element_text(size=14,face="bold"), legend.title = element_text(size=14, face="bold"), legend.text = element_text(size=12, face="bold")))
+  
+  dev.off()
+  
+  pdf(paste(output_prefix, "_monocle3_origident.pdf", sep = ""))
+  print(plot_cells(my.cds,
+             cell_size = 0.5,
+             color_cells_by = "orig.ident",
+             label_groups_by_cluster =FALSE,
+             group_label_size = 5,
+             label_leaves=FALSE,
+             label_branch_points=FALSE) + theme(axis.text=element_text(size=12, face="bold"),
+                                                axis.title=element_text(size=14,face="bold"), legend.title = element_text(size=14, face="bold"), legend.text = element_text(size=12, face="bold")))
+  dev.off()
+  
+  pdf(paste(output_prefix, "_monocle3_origident_hedgehogexpression.pdf", sep = ""))
+  print(plot_cells(my.cds,
+             cell_size = 0.5,
+             color_cells_by = "hedgehog",
+             label_groups_by_cluster=FALSE,
+             label_leaves=FALSE,
+             trajectory_graph_color = "black",
+             label_branch_points=FALSE) + theme(axis.text=element_text(size=12, face="bold"),
+                                                axis.title=element_text(size=14,face="bold"), legend.title = element_text(size=14, face="bold"), legend.text = element_text(size=12, face="bold")))
+  
+}
+```
+
+
+
+```{r}
+t0_de <- FindMarkers(t0_all_samples, ident.1 = paste(colnames(t0_dox), "_1", sep = ""), ident.2 = paste(colnames(t0_nodox), "_2", sep = ""), logfc.threshold = 0.2)
+t0_de$gene <- rownames(t0_de)
+print(nrow(t0_de)) # 294
+print(sum(t0_de$gene %in% competent_genes$gene)) #86
+write.table(t0_de, file = "t0_de.tsv", quote = F, row.names = F)
+```
+
+```{r}
+s1_original <- load("../110821_seurat_originaldataset_v2/S1.Robject")
+t0_all_samples_v2 <- merge(t0_dox, y = c(t0_nodox, s1), project = "prrx-c1-t0-withprevious", merge.data = TRUE)
+t0_all_samples_v2 <- ScaleData(t0_all_samples_v2, features = rownames(t0_all_samples_v2))
+t0_all_samples_v2 <- find_variable(t0_all_samples_v2, "t0_all_samples_v2_variable.pdf")
+t0_all_samples_v2 <- RunPCA(t0_all_samples_v2, npcs = 10)
+t0_all_samples_v2 <- RunUMAP(t0_all_samples_v2, dims = 1:10, min.dist = 0.75)
+t0_all_samples_v2 <- FindNeighbors(t0_all_samples_v2, dims = 1:10)
+t0_all_samples_v2 <- FindClusters(t0_all_samples_v2, resolution = 0.5, algorithm = 1) #Use the Louvain algorithm
+
+DimPlot(t0_all_samples_v2, reduction = "umap", group.by = "orig.ident") + ggtitle("t0 - All samples v2")
+
+
+
+ifnb.list <- SplitObject(t0_all_samples_v2, split.by = "orig.ident")
+# normalize and identify variable features for each dataset independently
+ifnb.list <- lapply(X = ifnb.list, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = ifnb.list)
+
+
+anchors <- FindIntegrationAnchors(object.list = ifnb.list, anchor.features = features)
+
+# this command creates an 'integrated' data assay
+combined <- IntegrateData(anchorset = anchors)
+
+DefaultAssay(combined) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+combined <- ScaleData(combined, verbose = FALSE)
+combined <- RunPCA(combined, npcs = 30, verbose = FALSE)
+combined <- RunUMAP(combined, reduction = "pca", dims = 1:30)
+combined <- FindNeighbors(combined, reduction = "pca", dims = 1:30)
+combined <- FindClusters(combined, resolution = 0.5)
+
+# Visualization
+p1 <- DimPlot(combined, reduction = "umap", group.by = "orig.ident")
+p2 <- DimPlot(combined, reduction = "umap", label = TRUE, repel = TRUE)
+untreated_competent_fixed <- gsub("_1", "_3", untreated_competent)
+untreated_noncompetent_fixed <- gsub("_1", "_3", untreated_noncompetent)
+
+DimPlot(combined, reduction = "umap", label = TRUE, repel = TRUE, cells.highlight = untreated_competent_fixed)
+DimPlot(combined, reduction = "umap", cells.highlight = untreated_noncompetent_fixed)
+
+p1 + p2
+
+```
+
+```{r}
+#integrate just using competent genes
+t0_all_samples_v3 <- merge(t0_dox, y = c(t0_nodox, s1), project = "prrx-c1-t0-withprevious", merge.data = TRUE)
+t0_all_samples_v3 <- t0_all_samples_v3[rownames(t0_all_samples_v3) %in% competent_genes$gene, ]
+t0_all_samples_v3 <- ScaleData(t0_all_samples_v3, features = rownames(t0_all_samples_v3))
+t0_all_samples_v3 <- find_variable(t0_all_samples_v3, "t0_all_samples_v3_variable.pdf")
+t0_all_samples_v3 <- RunPCA(t0_all_samples_v3, npcs = 10)
+t0_all_samples_v3 <- RunUMAP(t0_all_samples_v3, dims = 1:10, min.dist = 0.75)
+t0_all_samples_v3 <- FindNeighbors(t0_all_samples_v3, dims = 1:10)
+t0_all_samples_v3 <- FindClusters(t0_all_samples_v3, resolution = 0.5, algorithm = 1) #Use the Louvain algorithm
+
+DimPlot(t0_all_samples_v3, reduction = "umap", group.by = "orig.ident") + ggtitle("t0 - All samples v3")
+DimPlot(t0_all_samples_v3, reduction = "umap", group.by = "orig.ident", cells.highlight = untreated_competent_fixed) + ggtitle("t0 - All samples v3")
+
+
+
+ifnb.list <- SplitObject(t0_all_samples_v3, split.by = "orig.ident")
+# normalize and identify variable features for each dataset independently
+ifnb.list <- lapply(X = ifnb.list, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = ifnb.list)
+
+
+anchors <- FindIntegrationAnchors(object.list = ifnb.list, anchor.features = features)
+
+# this command creates an 'integrated' data assay
+combined <- IntegrateData(anchorset = anchors)
+
+DefaultAssay(combined) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+combined <- ScaleData(combined, verbose = FALSE)
+combined <- RunPCA(combined, npcs = 30, verbose = FALSE)
+combined <- RunUMAP(combined, reduction = "pca", dims = 1:30)
+combined <- FindNeighbors(combined, reduction = "pca", dims = 1:30)
+combined <- FindClusters(combined, resolution = 0.5)
+
+# Visualization
+p1 <- DimPlot(combined, reduction = "umap", group.by = "orig.ident")
+p2 <- DimPlot(combined, reduction = "umap", label = TRUE, repel = TRUE)
+untreated_competent_fixed <- gsub("_1", "_3", untreated_competent)
+untreated_noncompetent_fixed <- gsub("_1", "_3", untreated_noncompetent)
+
+DimPlot(combined, reduction = "umap", label = TRUE, repel = TRUE, cells.highlight = untreated_competent_fixed)
+DimPlot(combined, reduction = "umap", cells.highlight = untreated_noncompetent_fixed)
+
+p1 + p2
+
+```
+
+```{r hedgehog score}
+
+ plot_hedgehog <- function(df, hist_pdf, title1) {
+  print(hist_pdf)
+  df_hedgehog <- df@meta.data$hedgehog
+  hist(df_hedgehog, breaks = c(0, 1, 2, 3, 4))
+  pdf(hist_pdf)
+    plot(table(df_hedgehog), main = title1)
+  dev.off()
+  #print(table(df_hedgehog))
+  print(mean(df_hedgehog))
+ }
+plot_hedgehog(t0_nodox, "t0_nodox_hedgehogscore.pdf", "Nodox - t0")
+plot_hedgehog(t1_nodox, "t1_nodox_hedgehogscore.pdf", "Nodox - 19 hours")
+plot_hedgehog(t2_nodox, "t2_nodox_hedgehogscore.pdf", "Nodox - 30 hours")
+plot_hedgehog(t0_dox, "t0_dox_hedgehogscore.pdf", "dox - 0 hours")
+plot_hedgehog(t1_dox, "t1_dox_hedgehogscore.pdf", "dox - 19 hours")
+plot_hedgehog(t2_dox, "t2_dox_hedgehogscore.pdf", "dox - 30 hours")
+# > plot_hedgehog(t0_nodox, "t0_nodox_hedgehogscore.pdf", "Nodox - t0")
+# [1] "t0_nodox_hedgehogscore.pdf"
+# [1] 0.214333
+# > plot_hedgehog(t1_nodox, "t1_nodox_hedgehogscore.pdf", "Nodox - 19 hours")
+# [1] "t1_nodox_hedgehogscore.pdf"
+# [1] 1.290123
+# > plot_hedgehog(t2_nodox, "t2_nodox_hedgehogscore.pdf", "Nodox - 30 hours")
+# [1] "t2_nodox_hedgehogscore.pdf"
+# [1] 2.251796
+# > plot_hedgehog(t0_dox, "t0_dox_hedgehogscore.pdf", "dox - 0 hours")
+# [1] "t0_dox_hedgehogscore.pdf"
+# [1] 0.38442
+# > plot_hedgehog(t1_dox, "t1_dox_hedgehogscore.pdf", "dox - 19 hours")
+# [1] "t1_dox_hedgehogscore.pdf"
+# [1] 2.684804
+# > plot_hedgehog(t2_dox, "t2_dox_hedgehogscore.pdf", "dox - 30 hours")
+# [1] "t2_dox_hedgehogscore.pdf"
+# [1] 2.997353
+```
+
+```{r save_environment}
+save.image("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/102021_prrx1_timecourse_10x_nextseq_novaseq_combined/111621_environment.image")
+```
+
+
+
+```{r load_environment}
+load("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/102021_prrx1_timecourse_10x_nextseq_novaseq_combined/111621_environment.image")
+```

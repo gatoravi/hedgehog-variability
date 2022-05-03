@@ -1,0 +1,190 @@
+---
+title: "Garnett"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r setup_and_save}
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(monocle3)
+library(garnett)
+
+
+set.seed(300)
+setwd("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/032522_rungarnett")
+print(sessionInfo())
+```
+
+```{r run garnett}
+library(org.Mm.eg.db)
+
+seurat_to_cds <- function(my.so) {
+  my.so <- ProjectDim(my.so, reduction = "pca")
+  expression_matrix <- my.so@assays$RNA@counts
+  # Seurat-derived CDS
+  gene_annotation <- data.frame(gene_short_name = rownames(my.so@assays$RNA), row.names = rownames(my.so@assays$RNA))
+  cell_metadata <- my.so@meta.data
+
+  my.cds <- new_cell_data_set(expression_matrix,
+                              cell_metadata = cell_metadata,
+                              gene_metadata = gene_annotation)
+  
+  reducedDim(my.cds, type = "PCA") <- my.so@reductions$pca@cell.embeddings 
+  my.cds@preprocess_aux$prop_var_expl <- my.so@reductions$pca@stdev
+  # Transfer Seurat UMAP embeddings
+  my.cds@int_colData@listData$reducedDims$UMAP <- my.so@reductions$umap@cell.embeddings
+
+  # Copy cluster info from Seurat
+  my.cds@clusters$UMAP_so$clusters <- my.so@meta.data$gt_tp_cell_type_integrated_.0.9
+  return(my.cds)
+}
+
+load("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/110821_seurat_originaldataset_v2/S1.Robject")
+s1_cds <- seurat_to_cds(s1)
+
+load("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/110821_seurat_originaldataset_v2/untreated_competent.Robject")
+load("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/110821_seurat_originaldataset_v2/untreated_noncompetent.Robject")
+untreated_competent_cellnames <- gsub("_1", "", colnames(untreated_competent))
+untreated_noncompetent_cellnames <- gsub("_1", "", colnames(untreated_noncompetent))
+#s1[["competence"]] <- colnames(s1) %in% untreated_competent_cellnames
+#(colnames(s1) %in% untreated_competent_cellnames)?"competent":"non-competent"
+#colnames(s1) %in% untreated_competent_cellnames
+
+# Add the columns needed for the example:
+# 
+competence_vec <- c()
+for (cell in colnames(s1_cds)) {
+  if (cell %in% untreated_competent_cellnames) {
+      competence_vec <- c(competence_vec, "fast-responder")
+  } else if (cell %in% untreated_noncompetent_cellnames) {
+      competence_vec <- c(competence_vec, "slow-responder")
+  } else {
+      competence_vec <- c(competence_vec, "unkown-responder")
+  }
+}
+print(length(colnames(s1_cds)))
+print(length(competence_vec))
+
+s1[["competence"]] <- competence_vec
+pData(s1_cds)$competence <- competence_vec
+#pData(s1_cds)$competence <- ifelse(colnames(s1_cds)  %in% untreated_noncompetent_cellnames, "slow-responder", "unknown")
+#TODO - label unknown cells, plot on UMAP
+print(DimPlot(s1, reduction = "umap", pt.size = 1.0, group.by = "competence") + ggtitle("Unmodified 3T3-CG cells - t0"))
+```
+
+```{r run classifier}
+set.seed(300)
+marker_file_path <- "/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/032522_rungarnett/garnett.markers"
+competence_classifier <- train_cell_classifier(cds = s1_cds,
+                                         marker_file = marker_file_path,
+                                         db=org.Mm.eg.db,
+                                         max_training_samples = 500,
+                                         num_unknown = 50,
+                                         cores = 4,                                                                                                 cds_gene_id_type = "SYMBOL",
+                                         marker_file_gene_id_type = "SYMBOL")
+save(competence_classifier, file = "competence_classifier_v1.Robject")
+```
+ 
+```{r look at features}
+feature_genes <- get_feature_genes(competence_classifier, 
+                                   node = "root",
+                                   convert_ids = TRUE,
+                                   db = org.Mm.eg.db)
+
+feature_genes %>% dplyr::arrange(desc(`fast-responders`))
+feature_genes <- feature_genes[rownames(feature_genes) != "(Intercept)", ]
+print(dim(feature_genes))
+plot(feature_genes$`fast-responders`, feature_genes$`slow-responders`, xlab = "fast-responder weight", ylab = "slow-responder weight")
+feature_genes$gene <- rownames(feature_genes)
+write.table(feature_genes, file = "/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/032522_rungarnett/features.tsv", quote = F, row.names = F)
+```
+ 
+```{r run classifier on nodox}
+load("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/102021_prrx1_timecourse_10x_nextseq_novaseq_combined//t0_nodox.Robject")
+t0_nodox_cds <- seurat_to_cds(t0_nodox)
+t0_nodox_cds <- classify_cells(t0_nodox_cds, competence_classifier,
+                           db = org.Mm.eg.db,
+                           cluster_extend = TRUE,
+                           cds_gene_id_type = "SYMBOL")
+save(t0_nodox_cds, file = "t0_nodox_cds.Robject")
+print(table(pData(t0_nodox_cds)$cell_type))
+plot_cells(t0_nodox_cds, color_cells_by = "cell_type", show_trajectory_graph = FALSE, group_label_size = 3.5)
+t0_nodox_cds_pdata <- pData(t0_nodox_cds)
+t0_nodox_fastresponders <- rownames(t0_nodox_cds_pdata[t0_nodox_cds_pdata$cell_type == "fast-responders", ])
+t0_nodox_slowresponders <- rownames(t0_nodox_cds_pdata[t0_nodox_cds_pdata$cell_type == "slow-responders", ])
+t0_nodox_unknownresponders <- rownames(t0_nodox_cds_pdata[t0_nodox_cds_pdata$cell_type == "Unknown", ])
+```
+
+```{r run classifier on dox}
+load("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/102021_prrx1_timecourse_10x_nextseq_novaseq_combined//t0_dox.Robject")
+t0_dox_cds <- seurat_to_cds(t0_dox)
+t0_dox_cds <- classify_cells(t0_dox_cds, competence_classifier,
+                           db = org.Mm.eg.db,
+                           cluster_extend = TRUE,
+                           cds_gene_id_type = "SYMBOL")
+save(t0_dox_cds, file = "t0_dox_cds.Robject")
+head(pData(t0_dox_cds))
+table(pData(t0_dox_cds)$cell_type)
+plot_cells(t0_dox_cds, color_cells_by = "cell_type", show_trajectory_graph = FALSE, group_label_size = 3.5)
+t0_dox_cds_pdata <- pData(t0_dox_cds)
+t0_dox_fastresponders <- rownames(t0_dox_cds_pdata[t0_dox_cds_pdata$cell_type == "fast-responders", ])
+t0_dox_slowresponders <- rownames(t0_dox_cds_pdata[t0_dox_cds_pdata$cell_type == "slow-responders", ])
+
+```
+
+
+
+
+```{r look at all samples}
+load("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/102021_prrx1_timecourse_10x_nextseq_novaseq_combined/all_samples.Robject")
+
+print(DimPlot(all_samples, reduction = "umap", pt.size = 1.0, group.by = "orig.ident") + ggtitle("all time-points - both conditions"))
+print(DimPlot(all_samples, reduction = "umap", pt.size = 2.0, cells.highlight = paste(t0_dox_fastresponders, "_2", sep ="")) + ggtitle("Untreated +Dox: Fast responders"))
+ggsave("dox-fast.png")
+
+print(DimPlot(all_samples, reduction = "umap", pt.size = 2.0, cells.highlight = paste(t0_dox_slowresponders, "_2", sep ="")) + ggtitle("Untreated +Dox: Slow responders"))
+ggsave("dox-slow.png")
+
+print(DimPlot(all_samples, reduction = "umap", pt.size = 2.0, cells.highlight = paste(t0_nodox_fastresponders, "_1", sep ="")) + ggtitle("Untreated -Dox: Fast responders"))
+ggsave("nodox-fast.png")
+
+print(DimPlot(all_samples, reduction = "umap", pt.size = 2.0, cells.highlight = paste(t0_nodox_slowresponders, "_1", sep ="")) + ggtitle("Untreated -Dox: Slow responders"))
+ggsave("nodox-slow.png")
+
+print(DimPlot(all_samples, reduction = "umap", pt.size = 2.0, cells.highlight = paste(t0_nodox_unknownresponders, "_1", sep ="")) + ggtitle("Untreated -Dox: unknown responders from Garnett"))
+ggsave("nodox-unknown.png")
+
+
+```
+
+# ```{r}
+# all_samples_cds <- seurat_to_cds(all_samples)
+# all_samples_cds <- classify_cells(all_samples_cds, competence_classifier,
+#                            db = org.Mm.eg.db,
+#                            cluster_extend = TRUE,
+#                            cds_gene_id_type = "SYMBOL")
+# save(all_samples_cds, file = "all_samples_cds.Robject")
+# head(pData(all_samples_cds))
+# table(pData(all_samples_cds)$cell_type)
+# table(pData(all_samples_cds)$cluster_ext_type)
+# qplot(umap_1, umap_2, color = cell_type, data = as.data.frame(pData(all_samples_cds))) + theme_bw()
+# qplot(umap_1, umap_2, color = cluster_ext_type, data = as.data.frame(pData(all_samples_cds))) + theme_bw()
+# ```
+
+```{r save_environment}
+save.image("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/032522_rungarnett/run_garnett_classifier.image")
+```
+
+```{r load_environment}
+#load("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/032522_rungarnett/run_garnett_classifier.image")
+```
+
+
+
+

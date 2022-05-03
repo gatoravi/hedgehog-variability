@@ -1,0 +1,819 @@
+---
+title: "mark_competent_cells"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r setup_and_save}
+library(reticulate)
+#reticulate::use_python("/usr/local/bin/python3.7", required = T)
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+setwd("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/110821_seurat_originaldataset_v2/")
+```
+
+
+```{r load_robjects}
+  load(file = "all_samples.Robject")
+  load(file = "all_samples_de.Robject")
+
+  load(file = "S1.Robject")
+  load(file = "S2.Robject")
+  load(file = "S3.Robject")
+  load(file = "S4.Robject")
+```
+
+```{r mark_competent_cells}
+#all_samples <- all_samples[, all_samples@meta.data$Phase != "G2M"]
+print(DimPlot(all_samples, reduction = "umap", pt.size = 2.0,  group.by  = "orig.ident", label = T))
+print(DimPlot(all_samples, reduction = "umap", pt.size = 2.0,  group.by  = "Phase", label = T))
+print(DimPlot(all_samples, reduction = "umap", pt.size = 2.0,  label = T))
+FeaturePlot(all_samples, features = "hedgehog", reduction = "umap", min.cutoff = 1, max.cutoff = 4)
+
+```
+
+
+```{r define competent and noncompetent clusters and genes}
+#Find differentially expressed genes betweeen responders and non-responders
+library(Seurat)
+load(file = "all_samples.Robject")
+all_samples <- FindNeighbors(all_samples, dims = 1:10)
+#all_samples <- FindClusters(all_samples, resolution = 0.5, algorithm = 1) #Use the Louvain algorithm
+all_samples <- FindClusters(all_samples, resolution = 0.3, algorithm = 1) #Use the Louvain algorithm
+
+print(DimPlot(all_samples, reduction = "umap", pt.size = 2.0,  label = T))
+
+load(file = "all_samples_de.Robject")
+all_samples_de <- FindNeighbors(all_samples_de, dims = 1:10)
+print(all_samples_de)
+all_samples_de <- FindClusters(all_samples_de, resolution = 0.5)
+
+#1/7/22
+untreated_competent <- all_samples_de[, all_samples_de@meta.data$seurat_clusters %in% c(1) & all_samples_de@meta.data$orig.ident == "untreated"]
+untreated_noncompetent <- all_samples_de[, all_samples_de@meta.data$seurat_clusters %in% c(0) & all_samples_de@meta.data$orig.ident == "untreated"]
+#untreated_noncompetent  <- all_samples[, all_samples@meta.data$orig.ident == "untreated" & all_samples@meta.data$seurat_clusters %in% c(0)] #327
+#untreated_competent  <- all_samples[, all_samples@meta.data$orig.ident == "untreated" & all_samples@meta.data$seurat_clusters %in% c(3,2)] #327
+print(dim(untreated_competent))
+print(dim(untreated_noncompetent))
+print(ncol(untreated_noncompetent)/(ncol(untreated_noncompetent) + ncol(untreated_competent)))
+#0.34
+print(ncol(untreated_competent)/(ncol(untreated_noncompetent) + ncol(untreated_competent)))
+#0.66
+#untreated_noncompetent  <- all_samples[, all_samples@meta.data$orig.ident == "untreated" & all_samples@meta.data$seurat_clusters %in% c(0,2)] #301 genes
+#untreated_competent  <- all_samples[, all_samples@meta.data$orig.ident == "untreated" & all_samples@meta.data$seurat_clusters %in% c(3)] #301 genes
+
+competent_degenes <- FindMarkers(all_samples, ident.1 = colnames(untreated_competent), ident.2 = colnames(untreated_noncompetent), logfc.threshold = 0.2)
+competent_degenes <- read.table("../102021_prrx1_timecourse_10x_nextseq_novaseq_combined/top_300_genes.tsv", head = T) #stick to top 300 de genes
+
+competent_degenes_v2 <- FindMarkers(all_samples, ident.1 = colnames(untreated_competent), logfc.threshold = 0.2)
+write.table(competent_degenes_v2, "/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/102021_prrx1_timecourse_10x_nextseq_novaseq_combined/response_de_genes_competent_vs_rest.tsv", quote = F, row.names = F)
+
+print(dim(competent_degenes))
+competent_degenes$gene <- rownames(competent_degenes)
+write.table(competent_degenes, "response_de_genes_lfc0.2.tsv", quote = F, row.names = F)
+
+competent_degenes_0.1 <- FindMarkers(all_samples, ident.1 = colnames(untreated_competent), ident.2 = colnames(untreated_noncompetent), logfc.threshold = 0.1)
+competent_degenes_0.1$gene <- rownames(competent_degenes_0.1)
+write.table(competent_degenes_0.1, "response_de_genes_lfc0.1.tsv", quote = F, row.names = F)
+
+```
+
+
+
+```{r compare hr17 changes to competent signature}
+
+hr17_noncompetent  <- all_samples[, all_samples@meta.data$orig.ident == "hr17" & all_samples@meta.data$seurat_clusters %in% c(1)]
+print(hr17_noncompetent)
+print(dim(hr17_noncompetent))
+
+hr30_noncompetent  <- all_samples[, all_samples@meta.data$orig.ident == "hr30" & all_samples@meta.data$seurat_clusters %in% c(1)]
+print(hr30_noncompetent)
+print(dim(hr30_noncompetent))
+
+hr17_responders  <- all_samples[, all_samples@meta.data$orig.ident == "hr17" & all_samples@meta.data$seurat_clusters %in% c(2)]
+print(hr17_responders)
+print(dim(hr17_responders))
+
+hr30_responders  <- all_samples[, all_samples@meta.data$orig.ident == "hr30" & all_samples@meta.data$seurat_clusters %in% c(2)]
+print(hr30_responders)
+print(dim(hr30_responders))
+
+```
+
+```{r find de genes in diff clusterss}
+hr17_noncompetent_degenes <- FindMarkers(all_samples, ident.1 = colnames(hr17_noncompetent), ident.2 = colnames(untreated_noncompetent), logfc.threshold = 0.2)
+print(paste("hr17_noncompetent_degenes", dim(hr17_noncompetent_degenes)))
+hr17_noncompetent_degenes$gene <- rownames(hr17_noncompetent_degenes)
+write.table(hr17_noncompetent_degenes, "hr17_noncompetent_degenes_lfc0.2.tsv", quote = F, row.names = F)
+
+hr30_noncompetent_degenes <- FindMarkers(all_samples, ident.1 = colnames(hr30_noncompetent), ident.2 = colnames(untreated_noncompetent), logfc.threshold = 0.2)
+print(paste("hr30_noncompetent_degenes", dim(hr30_noncompetent_degenes)))
+hr30_noncompetent_degenes$gene <- rownames(hr30_noncompetent_degenes)
+write.table(hr30_noncompetent_degenes, "hr30_noncompetent_degenes_lfc0.2.tsv", quote = F, row.names = F)
+
+##hr17_responders_degenes <- FindMarkers(all_samples, ident.1 = colnames(untreated_competent), ident.2 = colnames(hr17_responders), logfc.threshold = 0.2)
+hr17_responders_degenes <- FindMarkers(all_samples, ident.1 = colnames(hr17_responders), ident.2 = colnames(untreated_noncompetent), logfc.threshold = 0.2)
+print(paste("hr17_responders_degenes", dim(hr17_responders_degenes)))
+hr17_responders_degenes$gene <- rownames(hr17_responders_degenes)
+write.table(hr17_responders_degenes, "hr17_responders_degenes_lfc0.2.tsv", quote = F, row.names = F)
+
+##hr30_responders_degenes <- FindMarkers(all_samples, ident.1 = colnames(untreated_competent), ident.2 = colnames(hr30_responders), logfc.threshold = 0.2)
+hr30_responders_degenes <- FindMarkers(all_samples, ident.1 = colnames(hr30_responders), ident.2 = colnames(untreated_noncompetent), logfc.threshold = 0.2)
+print(paste("hr30_responders_degenes", dim(hr30_responders_degenes)))
+hr30_responders_degenes$gene <- rownames(hr30_responders_degenes)
+write.table(hr30_responders_degenes, "hr30_responders_degenes_lfc0.2.tsv", quote = F, row.names = F)
+```
+
+```{r highlight cells}
+
+print(DimPlot(all_samples_de, reduction = "umap", group.by = "orig.ident", pt.size = 2.0,  label = T))
+print(DimPlot(all_samples_de, reduction = "umap", group.by = "seurat_clusters", pt.size = 2.0,  label = T))
+print(DimPlot(all_samples_de, reduction = "umap", pt.size = 2.0, cells.highlight = colnames(untreated_noncompetent)))
+print(DimPlot(all_samples_de, reduction = "umap", pt.size = 2.0, cells.highlight = colnames(untreated_competent)))
+
+print(FeaturePlot(all_samples_de, features =  "hedgehog", pt.size = 2.0,))
+
+
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = colnames(untreated_noncompetent)) + ggtitle("untreated - non competent"))
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = colnames(untreated_competent)) + ggtitle("untreated - competent"))
+
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = colnames(hr17_noncompetent)) + ggtitle("hr17 - non competent"))
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = colnames(hr17_responders)) + ggtitle("hr17 - competent"))
+
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = colnames(hr30_noncompetent)) + ggtitle("hr30 - non competent"))
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = colnames(hr30_responders)) + ggtitle("hr30 - competent"))
+
+```
+```{r highlight cells in de}
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = colnames(untreated_noncompetent)) + ggtitle("untreated - non competent"))
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = colnames(untreated_competent)) + ggtitle("untreated - competent"))
+
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = colnames(hr17_noncompetent)) + ggtitle("hr17 - non competent"))
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = colnames(hr17_responders)) + ggtitle("hr17 - competent"))
+
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = colnames(hr30_noncompetent)) + ggtitle("hr30 - non competent"))
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = colnames(hr30_responders)) + ggtitle("hr30 - competent"))
+
+print(FeaturePlot(all_samples, features = "hedgehog", reduction = "umap", min.cutoff = 1, max.cutoff = 4))
+print(DimPlot(all_samples, reduction = "umap", group.by = "Phase"))
+
+
+```
+
+```{r highlight cells in de}
+print(DimPlot(all_samples_de, reduction = "umap", cells.highlight = colnames(untreated_noncompetent)) + ggtitle("untreated - non competent"))
+print(DimPlot(all_samples_de, reduction = "umap", cells.highlight = colnames(untreated_competent)) + ggtitle("untreated - competent"))
+
+print(DimPlot(all_samples_de, reduction = "umap", cells.highlight = colnames(hr17_noncompetent)) + ggtitle("hr17 - non competent"))
+print(DimPlot(all_samples_de, reduction = "umap", cells.highlight = colnames(hr17_responders)) + ggtitle("hr17 - competent"))
+
+print(DimPlot(all_samples_de, reduction = "umap", cells.highlight = colnames(hr30_noncompetent)) + ggtitle("hr30 - non competent"))
+print(DimPlot(all_samples_de, reduction = "umap", cells.highlight = colnames(hr30_responders)) + ggtitle("hr30 - competent"))
+
+print(FeaturePlot(all_samples_de, features = "hedgehog", reduction = "umap", min.cutoff = 1, max.cutoff = 4))
+print(DimPlot(all_samples_de, reduction = "umap", group.by = "Phase"))
+
+
+```
+
+
+```{r highlight cells in de}
+print(DimPlot(all_samples_de, reduction = "pca", cells.highlight = colnames(untreated_noncompetent)) + ggtitle("untreated - non competent"))
+print(DimPlot(all_samples_de, reduction = "pca", cells.highlight = colnames(untreated_competent)) + ggtitle("untreated - competent"))
+
+print(DimPlot(all_samples_de, reduction = "pca", cells.highlight = colnames(hr17_noncompetent)) + ggtitle("hr17 - non competent"))
+print(DimPlot(all_samples_de, reduction = "pca", cells.highlight = colnames(hr17_responders)) + ggtitle("hr17 - competent"))
+
+print(DimPlot(all_samples_de, reduction = "pca", cells.highlight = colnames(hr30_noncompetent)) + ggtitle("hr30 - non competent"))
+print(DimPlot(all_samples_de, reduction = "pca", cells.highlight = colnames(hr30_responders)) + ggtitle("hr30 - competent"))
+
+print(FeaturePlot(all_samples_de, features = "hedgehog", reduction = "pca", min.cutoff = 1, max.cutoff = 4))
+print(DimPlot(all_samples_de, reduction = "pca", group.by = "Phase"))
+
+
+```
+
+
+
+```{r plot not S phase cells}
+all_samples_notS <- all_samples[, all_samples@meta.data$Phase != "S"]
+all_samples_notS <- RunPCA(all_samples_notS, npcs = 10)
+
+print(DimPlot(all_samples_notS, reduction = "pca", cells.highlight = colnames(untreated_noncompetent)) + ggtitle("untreated - non competent"))
+print(DimPlot(all_samples_notS, reduction = "pca", cells.highlight = colnames(untreated_competent)) + ggtitle("untreated - competent"))
+
+print(DimPlot(all_samples_notS, reduction = "pca", cells.highlight = colnames(hr17_noncompetent)) + ggtitle("hr17 - non competent"))
+print(DimPlot(all_samples_notS, reduction = "pca", cells.highlight = colnames(hr17_responders)) + ggtitle("hr17 - competent"))
+
+print(DimPlot(all_samples_notS, reduction = "pca", cells.highlight = colnames(hr30_noncompetent)) + ggtitle("hr30 - non competent"))
+print(DimPlot(all_samples_notS, reduction = "pca", cells.highlight = colnames(hr30_responders)) + ggtitle("hr30 - competent"))
+
+print(FeaturePlot(all_samples_notS, features = "hedgehog", reduction = "pca", min.cutoff = 1, max.cutoff = 4))
+print(DimPlot(all_samples_notS, reduction = "pca", group.by = "Phase"))
+```
+
+
+
+```{r hr 30 vs hr 17 }
+deseq_genes <- read.table(file = "deseq_significant_genes.tsv", header = F)
+print(dim(deseq_genes))
+`%!in%` <- Negate(`%in%`)
+
+print("Noncompetent: Does what come on at 17 hours stay on at 30 hours")
+print(dim(hr30_noncompetent_degenes))
+print(dim(hr17_noncompetent_degenes))
+print(sum(hr30_noncompetent_degenes$gene %in% hr17_noncompetent_degenes$gene))
+m3017 <-  merge(hr30_noncompetent_degenes, hr17_noncompetent_degenes, by = c("gene"))
+
+print(sum(sign(m3017$avg_logFC.x) == sign(m3017$avg_logFC.y)))
+print(sum(sign(m3017$avg_logFC.x) != sign(m3017$avg_logFC.y)))
+
+print("m3017-noncompetent")
+print(dim(m3017))
+print(sum(m3017$gene %in% deseq_genes$V1))
+m3017_sag <- sort(m3017$gene[m3017$gene %in% deseq_genes$V1])
+
+print(sum(m3017$gene %in% competent_degenes$gene))
+m3017_competent <- sort(m3017$gene[m3017$gene %in% competent_degenes$gene])
+
+m3017_neither <- sort(m3017$gene[m3017$gene %!in% deseq_genes$V1 & m3017$gene %!in% competent_degenes$gene])
+print(length(m3017_neither))
+
+print("both")
+print(sum(m3017_competent %in% m3017_sag))
+m3017_both <- m3017_competent[m3017_competent %in% m3017_sag]
+
+
+
+print("Competent: Does what come on at 17 hours stay on at 30 hours")
+print(dim(hr30_responders_degenes))
+print(dim(hr17_responders_degenes))
+print(sum(hr30_responders_degenes$gene %in% hr17_responders_degenes$gene))
+m3017 <-  merge(hr30_responders_degenes, hr17_responders_degenes, by = c("gene"))
+
+print(sum(sign(m3017$avg_logFC.x) == sign(m3017$avg_logFC.y)))
+print(sum(sign(m3017$avg_logFC.x) != sign(m3017$avg_logFC.y)))
+
+print("m3017-competent")
+print(dim(m3017))
+print(sum(m3017$gene %in% deseq_genes$V1))
+m3017_sag <- sort(m3017$gene[m3017$gene %in% deseq_genes$V1])
+
+print(sum(m3017$gene %in% competent_degenes$gene))
+m3017_competent <- sort(m3017$gene[m3017$gene %in% competent_degenes$gene])
+
+m3017_neither <- sort(m3017$gene[m3017$gene %!in% deseq_genes$V1 & m3017$gene %!in% competent_degenes$gene])
+print(length(m3017_neither))
+
+print("both")
+print(sum(m3017_competent %in% m3017_sag))
+m3017_both <- m3017_competent[m3017_competent %in% m3017_sag]
+
+#Is this the high confidence competent set, 142 genes shared across multiple imepoints.
+write.table(m3017_competent, "m3017_competent.tsv", sep = "\t", quote = F, row.names = F)
+```
+
+
+
+
+
+
+```{r overlap de genes and competent genes}
+
+print(dim(competent_degenes))
+
+print("competent genes in de genes")
+print(sum(deseq_genes$V1 %in% competent_degenes$gene))
+print(deseq_genes[deseq_genes$V1 %in% competent_degenes$gene, ])
+
+
+print("hr17 non competent in de genes")
+print(sum(hr17_noncompetent_degenes$gene %in% deseq_genes$V1))
+
+print("hr17  competent in de genes")
+print(sum(hr17_responders_degenes$gene %in% deseq_genes$V1))
+
+print("hr30 non competent in de genes")
+print(sum(hr30_noncompetent_degenes$gene %in% deseq_genes$V1))
+print("hr30 competent in de genes")
+print(sum(hr30_responders_degenes$gene %in% deseq_genes$V1))
+```
+
+```{r prrx1 de genes in competent}
+prrx1_de_genes <- read.table("../081221_prrx1_timecourse_bulk_full_run/deseq_results_significant_genes.txt")
+head(prrx1_de_genes$V1)
+print(dim(competent_degenes))
+print(sum(competent_degenes$gene %in% prrx1_de_genes$V1))
+#74
+```
+
+```{r make venn diagrams, competent and sag}
+competent_degenes <- read.table("../102021_prrx1_timecourse_10x_nextseq_novaseq_combined/top_300_genes.tsv", head = T)
+
+print("hr17")
+print("hr17 non competent")
+print(dim(hr17_noncompetent_degenes))
+print(dim(competent_degenes))
+
+print(sum(hr17_noncompetent_degenes$gene %in% deseq_genes$V1))
+hr17_noncompetent_sag <- sort(hr17_noncompetent_degenes$gene[hr17_noncompetent_degenes$gene %in% deseq_genes$V1])
+
+
+print(paste("hr17 non competent in competent signature", sum(hr17_noncompetent_degenes$gene %in% competent_degenes$gene)))
+
+hr17_noncompetent_competent <- sort(hr17_noncompetent_degenes$gene[hr17_noncompetent_degenes$gene %in% competent_degenes$gene])
+print("neither")
+hr17_noncompetent_neither <- sort(hr17_noncompetent_degenes$gene[hr17_noncompetent_degenes$gene %!in% deseq_genes$V1 & hr17_noncompetent_degenes$gene %!in% competent_degenes$gene])
+print(length(hr17_noncompetent_neither))
+
+print("both")
+hr17_noncompetent_both <- hr17_noncompetent_competent[hr17_noncompetent_competent %in% hr17_noncompetent_sag]
+print(sum(hr17_noncompetent_competent %in% hr17_noncompetent_sag))
+
+print("hr17 competent")
+print(dim(hr17_responders_degenes))
+print(sum(hr17_responders_degenes$gene %in% deseq_genes$V1))
+hr17_responders_sag <- sort(hr17_responders_degenes$gene[hr17_responders_degenes$gene %in% deseq_genes$V1])
+
+print(sum(hr17_responders_degenes$gene %in% competent_degenes$gene))
+hr17_responders_competent <- sort(hr17_responders_degenes$gene[hr17_responders_degenes$gene %in% competent_degenes$gene])
+
+print("neither")
+hr17_responders_neither <- sort(hr17_responders_degenes$gene[hr17_responders_degenes$gene %!in% deseq_genes$V1 & hr17_responders_degenes$gene %!in% competent_degenes$gene])
+print(length(hr17_responders_neither))
+
+print("both")
+hr17_responders_both <- hr17_responders_competent[hr17_responders_competent %in% hr17_responders_sag]
+print(sum(hr17_responders_competent %in% hr17_responders_sag))
+
+print("responders, noncompetent sharing")
+print("total shared")
+print(dim(hr17_responders_degenes))
+print(dim(hr17_noncompetent_degenes))
+print(sum(hr17_responders_degenes$gene %in% hr17_noncompetent_degenes$gene))
+
+print("competent shared")
+print(length(hr17_responders_competent))
+print(length(hr17_noncompetent_competent))
+print(sum(hr17_responders_competent %in% hr17_noncompetent_competent))
+
+print("Sag shared")
+print(length(hr17_responders_sag))
+print(length(hr17_noncompetent_sag))
+print(sum(hr17_responders_sag %in% hr17_noncompetent_sag))
+
+print("neither shared")
+print(length(hr17_noncompetent_neither))
+print(length(hr17_responders_neither))
+print(sum(hr17_noncompetent_neither %in% hr17_responders_neither))
+
+print("both shared")
+print(length(hr17_noncompetent_both))
+print(length(hr17_responders_both))
+print(sum(hr17_noncompetent_both %in% hr17_responders_both))
+print(hr17_noncompetent_both[hr17_noncompetent_both %in% hr17_responders_both])
+
+
+
+print(paste("hr17 non competent in competent signature", sum(hr17_noncompetent_degenes$gene %in% competent_degenes$gene), dim(hr17_noncompetent_degenes)))
+print(paste("hr17 competent in competent signature", sum(hr17_responders_degenes$gene %in% competent_degenes$gene), dim(hr17_responders_degenes)))
+print(paste("hr30 non competent in competent signature", sum(hr30_noncompetent_degenes$gene %in% competent_degenes$gene), dim(hr30_noncompetent_degenes)))
+print(paste("hr30 competent in competent signature", sum(hr30_responders_degenes$gene %in% competent_degenes$gene), dim(hr30_responders_degenes)))
+
+#used in paper
+
+# [1] "hr17 non competent in competent signature 32 117" "hr17 non competent in competent signature 32 6"  
+# [1] "hr17 competent in competent signature 231 595" "hr17 competent in competent signature 231 6"  
+# [1] "hr30 non competent in competent signature 48 196" "hr30 non competent in competent signature 48 6"  
+# [1] "hr30 competent in competent signature 213 737" "hr30 competent in competent signature 213 6"  
+# 
+# 
+# 
+# 
+print(paste("hr17 non competent in competent signature", sum(hr17_noncompetent_degenes$gene %in% deseq_genes$V1), dim(hr17_noncompetent_degenes)))
+print(paste("hr17 competent in competent signature", sum(hr17_responders_degenes$gene %in% deseq_genes$V1), dim(hr17_responders_degenes)))
+print(paste("hr30 non competent in competent signature", sum(hr30_noncompetent_degenes$gene %in% deseq_genes$V1), dim(hr30_noncompetent_degenes)))
+print(paste("hr30 competent in competent signature", sum(hr30_responders_degenes$gene %in% deseq_genes$V1), dim(hr30_responders_degenes)))
+
+# [1] "hr17 non competent in competent signature 3 117" "hr17 non competent in competent signature 3 6"  
+# [1] "hr17 competent in competent signature 33 595" "hr17 competent in competent signature 33 6"  
+# [1] "hr30 non competent in competent signature 12 196" "hr30 non competent in competent signature 12 6"  
+# [1] "hr30 competent in competent signature 44 737" "hr30 competent in competent signature 44 6"
+
+```
+
+
+```{r make venn diagrams hr30, competent and sag}
+print("hr30")
+print("hr30 - noncompetent")
+print("SAG")
+print(dim(hr30_noncompetent_degenes))
+print(sum(hr30_noncompetent_degenes$gene %in% deseq_genes$V1))
+hr30_noncompetent_sag <- sort(hr30_noncompetent_degenes$gene[hr30_noncompetent_degenes$gene %in% deseq_genes$V1])
+
+print("competent")
+print(sum(hr30_noncompetent_degenes$gene %in% competent_degenes$gene))
+hr30_noncompetent_competent <- sort(hr30_noncompetent_degenes$gene[hr30_noncompetent_degenes$gene %in% competent_degenes$gene])
+
+print("neither")
+hr30_noncompetent_neither <- sort(hr30_noncompetent_degenes$gene[hr30_noncompetent_degenes$gene %!in% deseq_genes$V1 & hr30_noncompetent_degenes$gene %!in% competent_degenes$gene])
+print(length(hr30_noncompetent_neither))
+
+print("both")
+hr30_noncompetent_both <- hr30_noncompetent_competent[hr30_noncompetent_competent %in% hr30_noncompetent_sag]
+print(sum(hr30_noncompetent_competent %in% hr30_noncompetent_sag))
+
+print("hr30 - responders")
+print("SAG")
+print(dim(hr30_responders_degenes))
+print(sum(hr30_responders_degenes$gene %in% deseq_genes$V1))
+hr30_responders_sag <- sort(hr30_responders_degenes$gene[hr30_responders_degenes$gene %in% deseq_genes$V1])
+
+print("competent")
+print(sum(hr30_responders_degenes$gene %in% competent_degenes$gene))
+hr30_responders_competent <- sort(hr30_responders_degenes$gene[hr30_responders_degenes$gene %in% competent_degenes$gene])
+
+print("neither")
+hr30_responders_neither <- sort(hr30_responders_degenes$gene[hr30_responders_degenes$gene %!in% deseq_genes$V1 & hr30_responders_degenes$gene %!in% competent_degenes$gene])
+print(length(hr30_responders_neither))
+
+print("both")
+hr30_responders_both <- hr30_responders_competent[hr30_responders_competent %in% hr30_responders_sag]
+print(sum(hr30_responders_competent %in% hr30_responders_sag))
+
+print("hr30 - non-competent responders sharing")
+print("total shared")
+print(dim(hr30_responders_degenes))
+print(dim(hr30_noncompetent_degenes))
+print(sum(hr30_responders_degenes$gene %in% hr30_noncompetent_degenes$gene))
+
+print("competent shared")
+print(length(hr30_responders_competent))
+print(length(hr30_noncompetent_competent))
+print(sum(hr30_responders_competent %in% hr30_noncompetent_competent))
+
+print("sag shared")
+print(length(hr30_responders_sag))
+print(length(hr30_noncompetent_sag))
+print(sum(hr30_responders_sag %in% hr30_noncompetent_sag))
+
+print("neither shared")
+print(length(hr30_responders_neither))
+print(length(hr30_noncompetent_neither))
+print(sum(hr30_noncompetent_neither %in% hr30_responders_neither))
+
+print("both shared")
+print(length(hr30_responders_both))
+print(length(hr30_noncompetent_both))
+print(sum(hr30_noncompetent_both %in% hr30_responders_both))
+print(hr30_noncompetent_both[hr30_noncompetent_both %in% hr30_responders_both])
+
+#todo-compute sharing in both,
+```
+
+
+
+
+
+```{r how many cells in each cluster}
+print(dim(untreated_competent))
+print(dim(untreated_noncompetent))
+print(dim(hr17_responders))
+print(dim(hr17_noncompetent))
+print(dim(hr30_responders))
+print(dim(hr30_noncompetent))
+
+print(dim(all_samples))
+
+print(table(all_samples@meta.data$orig.ident))
+print(table(all_samples@meta.data$Phase))
+
+print(head(colnames(untreated_noncompetent)))
+print(head(colnames(hr17_responders)))
+
+untreated <- all_samples[, all_samples@meta.data$orig.ident == "untreated"]
+hr17 <- all_samples[, all_samples@meta.data$orig.ident == "hr17"]
+hr30 <- all_samples[, all_samples@meta.data$orig.ident == "hr30"]
+
+print(table(untreated@meta.data$seurat_clusters))
+print(table(hr17@meta.data$seurat_clusters))
+print(table(hr30@meta.data$seurat_clusters))
+
+
+```
+
+```{r look at hedgehgo distribution}
+  untreated_competent_hedgehog <- untreated_competent@meta.data$hedgehog
+  hist(untreated_competent_hedgehog, breaks = c(0, 1, 2, 3, 4))
+  plot(table(untreated_competent_hedgehog))
+  print(table(untreated_competent_hedgehog))
+  print(mean(untreated_competent_hedgehog))
+  
+  untreated_noncompetent_hedgehog <- untreated_noncompetent@meta.data$hedgehog
+  hist(untreated_noncompetent_hedgehog, breaks = c(0, 1, 2, 3, 4))
+  plot(table(untreated_noncompetent_hedgehog))
+  print(table(untreated_noncompetent_hedgehog))
+    print(mean(untreated_noncompetent_hedgehog))
+
+  
+  hr17_responders_hedgehog <- hr17_responders@meta.data$hedgehog
+  hist(hr17_responders_hedgehog, breaks = c(0, 1, 2, 3, 4))
+  plot(table(hr17_responders_hedgehog))
+  print(table(hr17_responders_hedgehog))
+    print(mean(hr17_responders_hedgehog))
+
+  
+  hr17_noncompetent_hedgehog <- hr17_noncompetent@meta.data$hedgehog
+  hist(hr17_noncompetent_hedgehog, breaks = c(0, 1, 2, 3, 4))
+  plot(table(hr17_noncompetent_hedgehog))
+  print(table(hr17_noncompetent_hedgehog))
+    print(mean(hr17_noncompetent_hedgehog))
+
+  
+  hr30_responders_hedgehog <- hr30_responders@meta.data$hedgehog
+  hist(hr30_responders_hedgehog, breaks = c(0, 1, 2, 3, 4))
+  plot(table(hr30_responders_hedgehog))
+  print(table(hr30_responders_hedgehog))
+  print(mean(hr30_responders_hedgehog))
+
+  
+  hr30_noncompetent_hedgehog <- hr30_noncompetent@meta.data$hedgehog
+  hist(hr30_noncompetent_hedgehog, breaks = c(0, 1, 2, 3, 4))
+  plot(table(hr30_noncompetent_hedgehog))
+  print(table(hr30_noncompetent_hedgehog))
+  print(mean(hr30_noncompetent_hedgehog))
+
+```
+
+```{r markers for competent cells}
+competent_markers <- FindMarkers(object = all_samples, ident.1 = 3)
+competent_markers_positive <- dplyr::filter(competent_markers, avg_logFC > 0)
+write.table(competent_markers_positive, "competent_marker_genes.tsv", sep = "\t", quote = F)
+```
+
+
+```{r cluster based on competent genes}
+
+print(str(competent_degenes))
+
+
+#Subset single-cell data to DEG
+s1_competent <- s1[(rownames(s1) %in% competent_degenes$gene), ]
+s2_competent <- s2[(rownames(s2) %in% competent_degenes$gene), ]
+s3_competent <- s3[(rownames(s3) %in% competent_degenes$gene), ]
+s4_competent <- s4[(rownames(s4) %in% competent_degenes$gene), ]
+
+all_samples_competent <- merge(s1_competent, y = c(s2_competent, s4_competent), project = "3t3-SAG", merge.data = TRUE)
+all_samples_competent <- ScaleData(all_samples_competent, features = rownames(all_samples_competent))
+
+# Subset after merge causes issues with running PCA, seems to retain PCA before subset and not re-run it.
+
+#Run PCA
+all_samples_competent <- FindVariableFeatures(all_samples_competent, selection.method = "vst", nfeatures = 2000)
+all_samples_competent <- RunPCA(all_samples_competent, verbose = FALSE, npcs = 10)
+
+#Run UMAP
+all_samples_competent <- RunUMAP(all_samples_competent, dims = 1:10, min.dist = 0.75)
+save(all_samples_competent, file = "all_samples_competent.Robject")
+
+```
+
+```{r highlight cells in competent}
+print(str(all_samples_competent))
+print(DimPlot(all_samples_competent, reduction = "umap", cells.highlight = colnames(untreated_noncompetent)) + ggtitle("untreated - non competent"))
+print(DimPlot(all_samples_competent, reduction = "umap", cells.highlight = colnames(untreated_competent)) + ggtitle("untreated - competent"))
+
+print(DimPlot(all_samples_competent, reduction = "umap", cells.highlight = colnames(hr17_noncompetent)) + ggtitle("hr17 - non competent"))
+print(DimPlot(all_samples_competent, reduction = "umap", cells.highlight = colnames(hr17_responders)) + ggtitle("hr17 - competent"))
+
+print(DimPlot(all_samples_competent, reduction = "umap", cells.highlight = colnames(hr30_noncompetent)) + ggtitle("hr30 - non competent"))
+print(DimPlot(all_samples_competent, reduction = "umap", cells.highlight = colnames(hr30_responders)) + ggtitle("hr30 - competent"))
+
+print(FeaturePlot(all_samples_competent, features = "hedgehog", reduction = "umap", min.cutoff = 1, max.cutoff = 4))
+print(DimPlot(all_samples_competent, reduction = "umap", group.by = "Phase"))
+print(DimPlot(all_samples_competent, reduction = "umap", group.by = "orig.ident"))
+
+
+```
+
+
+```{r highlight cells in de}
+print(DimPlot(all_samples_competent, reduction = "pca", cells.highlight = colnames(untreated_noncompetent)) + ggtitle("untreated - non competent"))
+print(DimPlot(all_samples_competent, reduction = "pca", cells.highlight = colnames(untreated_competent)) + ggtitle("untreated - competent"))
+
+print(DimPlot(all_samples_competent, reduction = "pca", cells.highlight = colnames(hr17_noncompetent)) + ggtitle("hr17 - non competent"))
+print(DimPlot(all_samples_competent, reduction = "pca", cells.highlight = colnames(hr17_responders)) + ggtitle("hr17 - competent"))
+
+print(DimPlot(all_samples_competent, reduction = "pca", cells.highlight = colnames(hr30_noncompetent)) + ggtitle("hr30 - non competent"))
+print(DimPlot(all_samples_competent, reduction = "pca", cells.highlight = colnames(hr30_responders)) + ggtitle("hr30 - competent"))
+
+print(FeaturePlot(all_samples_competent, features = "hedgehog", reduction = "pca", min.cutoff = 1, max.cutoff = 4))
+print(DimPlot(all_samples_competent, reduction = "pca", group.by = "Phase"))
+
+
+```
+```{r do cell cycle genes separate competent from non-competent}
+convertHumanGeneList_mousename <- function(x){
+        require("biomaRt")
+        human = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+        mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+        genesV2 = getLDS(attributes = c("hgnc_symbol"), filters = "hgnc_symbol",
+                        values = x , mart = human, attributesL = c("mgi_symbol"),
+                        martL = mouse, uniqueRows=T)
+        mouseX <- unique(genesV2[, 2])
+        # Print the first 6 genes found to the screen
+        return(mouseX)
+}
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+
+#Convert human gene names to mous
+#s.genes <- convertHumanGeneList_mousename(s.genes)
+#g2m.genes <- convertHumanGeneList_mousename(g2m.genes)
+#cellcycle_genes <- c(s.genes, g2m.genes)
+#write.table(cellcycle_genes, "cellcycle_genes.tsv", row.names = F, col.names = F, quote = F)
+
+cellcycle_genes <- read.table("cellcycle_genes.tsv", header = F)
+cellcycle_genes <- cellcycle_genes$V1
+print(cellcycle_genes)
+
+#Subset single-cell data to DEG
+s1_cc <- s1[(rownames(s1) %in% cellcycle_genes), ]
+s2_cc <- s2[(rownames(s2) %in% cellcycle_genes), ]
+s3_cc <- s3[(rownames(s3) %in% cellcycle_genes), ]
+s4_cc <- s4[(rownames(s4) %in% cellcycle_genes), ]
+
+all_samples_cc <- merge(s1_cc, y = c(s2_cc, s4_cc), project = "3t3-SAG", merge.data = TRUE)
+all_samples_notS
+all_samples_cc <- ScaleData(all_samples_cc, features = rownames(all_samples_cc))
+
+# Subset after merge causes issues with running PCA, seems to retain PCA before subset and not re-run it.
+
+#Run PCA
+all_samples_cc <- FindVariableFeatures(all_samples_cc, selection.method = "vst", nfeatures = 2000)
+all_samples_cc <- RunPCA(all_samples_cc, verbose = FALSE, npcs = 10)
+
+#Run UMAP
+all_samples_cc <- RunUMAP(all_samples_cc, dims = 1:10, min.dist = 0.75)
+save(all_samples_cc, file = "all_samples_competent.Robject")
+
+```
+
+
+```{r highlight cells in competent}
+print(str(all_samples_cc))
+print(DimPlot(all_samples_cc, reduction = "umap", cells.highlight = colnames(untreated_noncompetent)) + ggtitle("untreated - non competent"))
+print(DimPlot(all_samples_cc, reduction = "umap", cells.highlight = colnames(untreated_competent)) + ggtitle("untreated - competent"))
+
+print(DimPlot(all_samples_cc, reduction = "umap", cells.highlight = colnames(hr17_noncompetent)) + ggtitle("hr17 - non competent"))
+print(DimPlot(all_samples_cc, reduction = "umap", cells.highlight = colnames(hr17_responders)) + ggtitle("hr17 - competent"))
+
+print(DimPlot(all_samples_cc, reduction = "umap", cells.highlight = colnames(hr30_noncompetent)) + ggtitle("hr30 - non competent"))
+print(DimPlot(all_samples_cc, reduction = "umap", cells.highlight = colnames(hr30_responders)) + ggtitle("hr30 - competent"))
+
+print(FeaturePlot(all_samples_cc, features = "hedgehog", reduction = "umap", min.cutoff = 1, max.cutoff = 4))
+print(DimPlot(all_samples_cc, reduction = "umap", group.by = "Phase"))
+print(DimPlot(all_samples_cc, reduction = "umap", group.by = "orig.ident"))
+
+
+```
+
+```{r highlight cells in cc}
+print(DimPlot(all_samples_cc, reduction = "pca", cells.highlight = colnames(untreated_noncompetent)) + ggtitle("untreated - non competent"))
+print(DimPlot(all_samples_cc, reduction = "pca", cells.highlight = colnames(untreated_competent)) + ggtitle("untreated - competent"))
+
+print(DimPlot(all_samples_cc, reduction = "pca", cells.highlight = colnames(hr17_noncompetent)) + ggtitle("hr17 - non competent"))
+print(DimPlot(all_samples_cc, reduction = "pca", cells.highlight = colnames(hr17_responders)) + ggtitle("hr17 - competent"))
+
+print(DimPlot(all_samples_cc, reduction = "pca", cells.highlight = colnames(hr30_noncompetent)) + ggtitle("hr30 - non competent"))
+print(DimPlot(all_samples_cc, reduction = "pca", cells.highlight = colnames(hr30_responders)) + ggtitle("hr30 - competent"))
+
+print(FeaturePlot(all_samples_cc, features = "hedgehog", reduction = "pca", min.cutoff = 1, max.cutoff = 4))
+print(DimPlot(all_samples_cc, reduction = "pca", group.by = "Phase"))
+```
+
+```{r what are the neither genes}
+print(length(hr30_responders_neither))
+write.table(hr30_responders_neither, file = "hr30_responders_neither.tsv", quote = F, row.names = F, col.names = F)
+print(length(hr30_responders_competent))
+write.table(hr30_responders_competent, file = "hr30_responders_both.tsv", quote = F, row.names = F, col.names = F)
+
+
+
+# hr30_responders_neither
+# What's enriched in these 240?
+# PANTHER Pathways 	# 	# 	expected 	Fold Enrichment 	+/- 	raw P value 	FDR
+#Huntington disease 	152 	9 	1.66 	5.42 	+ 	6.60E-05 	1.10E-02
+#Unclassified 	19376 	192 	211.49 	.91 	- 	2.95E-04 	2.47E-02
+
+
+## hr30_responders_competent
+## 
+#   	Mus musculus (REF) 	upload_1
+# PANTHER Pathways 	# 	# 	expected 	Fold Enrichment 	+/- 	raw P value 	FDR
+# PDGF signaling pathway 	145 	5 	.69 	7.29 	+ 	7.23E-04 	2.42E-02
+# Integrin signalling pathway 	189 	6 	.89 	6.71 	+ 	3.24E-04 	1.35E-02
+# Inflammation mediated by chemokine and cytokine signaling pathway 	257 	8 	1.22 	6.58 	+ 	3.68E-05 	6.14E-03
+# CCKR signaling map 	163 	5 	.77 	6.49 	+ 	1.20E-03 	3.34E-02
+# Gonadotropin-releasing hormone receptor pathway 	234 	7 	1.11 	6.32 	+ 	1.46E-04 	1.22E-02
+# Angiogenesis 	177 	5 	.84 	5.97 	+ 	1.71E-03 	4.08E-02
+# Unclassified 	19376 	78 	91.65 	.85 	- 	2.00E-04 	1.11E-02
+# 
+# 
+hr30_responders_degenes <- FindMarkers(all_samples, ident.1 = colnames(untreated_noncompetent), ident.2 = colnames(hr30_responders), logfc.threshold = 0.2)
+print(hr30_responders_degenes)
+print(dim(hr30_responders_degenes))
+hr30_responders_degenes$gene <- rownames(hr30_responders_degenes)
+print(nrow(hr30_responders_degenes))
+write.table(hr30_responders_degenes$gene, file = "hr30_responders_all.tsv", quote = F, row.names = F, col.names = F)
+
+hr30_responders_degenes <- FindMarkers(all_samples, ident.1 = colnames(untreated_competent), ident.2 = colnames(hr30_responders), logfc.threshold = 0.2)
+print(hr30_responders_degenes)
+print(dim(hr30_responders_degenes))
+hr30_responders_degenes$gene <- rownames(hr30_responders_degenes)
+print(nrow(hr30_responders_degenes))
+write.table(hr30_responders_degenes$gene, file = "hr30_responders_all.tsv", quote = F, row.names = F, col.names = F)
+
+
+#Enrichments in the 134 deseq_genes, note only 3 hedgehog genes out of 20 are in the 134
+#  # 	Mus musculus (REF) 	upload_1
+# PANTHER Pathways 	# 	# 	expected 	Fold Enrichment 	+/- 	raw P value 	FDR
+# Plasminogen activating cascade 	17 	3 	.10 	29.17 	+ 	2.25E-04 	1.88E-02
+# Hedgehog signaling pathway 	20 	3 	.12 	24.80 	+ 	3.45E-04 	1.92E-02
+# CCKR signaling map 	163 	6 	.99 	6.09 	+ 	5.61E-04 	2.34E-02
+# Gonadotropin-releasing hormone receptor pathway 	234 	7 	1.42 	4.95 	+ 	6.49E-04 	2.17E-02
+# Unclassified 	19376 	95 	117.20 	.81 	- 	2.32E-07 	3.88E-05
+
+```
+
+```{r look_at_tf_in_responder_genes}
+mousetf <- read.table("mtfkb_TF_expression_FPKM_genes.tsv", head = T)
+mousetf <- mousetf$Gene
+competent_degenes_tfs <- competent_degenes[competent_degenes$gene %in% mousetf, ] %>% arrange(desc(abs(avg_logFC)))
+print(competent_degenes_tfs)
+print(dim(competent_degenes))
+```
+
+```{r }
+#Are the common competent genes better?
+m3017_competent_tfs <- m3017_competent[m3017_competent %in% mousetf] 
+print(m3017_competent_tfs)
+print(length(m3017_competent_tfs))
+```
+
+
+```{r elife regulators overlap with competent}
+elife_regulators <- read.table("elife-50051-supp2-v4-cleaned.csv", sep = ",", head = T)
+print(head(elife_regulators))
+```
+
+```{r plot_cell_cycle_histogram}
+print(dim(untreated_competent))
+print(dim(untreated_noncompetent))
+require(ggplot2)
+untreated_competent_cells <- untreated_competent
+untreated_noncompetent_cells <- untreated_noncompetent
+competent_cellcycle_table <- as.data.frame(unclass(table(untreated_competent_cells@meta.data$Phase)))
+competent_cellcycle_table$cellcycle_phase <- rownames(competent_cellcycle_table)
+competent_cellcycle_table$hedgehog_response_status <- "Fast responders"
+colnames(competent_cellcycle_table)[1] <- "proportion"
+competent_cellcycle_table$proportion <- competent_cellcycle_table$proportion/ncol(untreated_competent)
+
+incompetent_cellcycle_table <- as.data.frame(unclass(table(untreated_noncompetent_cells@meta.data$Phase)))
+incompetent_cellcycle_table$cellcycle_phase <- rownames(incompetent_cellcycle_table)
+incompetent_cellcycle_table$hedgehog_response_status <- "Slow responders"
+colnames(incompetent_cellcycle_table)[1] <- "proportion"
+incompetent_cellcycle_table$proportion <- incompetent_cellcycle_table$proportion/ncol(untreated_noncompetent)
+
+untreated_cellcycle_table <- rbind(competent_cellcycle_table, incompetent_cellcycle_table)
+print(untreated_cellcycle_table)
+png("cellcycle_response.png")
+  ggplot(untreated_cellcycle_table, aes(fill=hedgehog_response_status, y=proportion, x=cellcycle_phase)) + geom_bar(position="dodge", stat="identity") + xlab("Cell cycle phase") + ylab("Fraction of cells") + ggtitle("Untreated cells")  + theme_grey(base_size = 22) +  labs(fill = "") + theme(legend.position = c(0.8,1))
+#theme(legend.position = c(0.8, 0.9)) + theme(axis.text.x = element_text(face="bold", size=14), axis.text.y = element_text(face="bold", size=14)) + #+  labs(fill = "Competence to respond to hedgehog") +·
+dev.off()
+
+pdf("cellcycle_response.pdf")
+  ggplot(untreated_cellcycle_table, aes(fill = hedgehog_response_status, y = proportion, x = cellcycle_phase)) + geom_bar(position="dodge", stat="identity") + xlab("Cell cycle phase") + ylab("Fraction of cells") + ggtitle("Untreated cells")  + theme_grey(base_size = 22) +  labs(fill = "") + theme(legend.position = c(0.8,1))
+#theme(legend.position = c(0.8, 0.9)) + theme(axis.text.x = element_text(face="bold", size=14), axis.text.y = element_text(face="bold", size=14)) + #+  labs(fill = "Competence to respond to hedgehog") +·
+dev.off()
+```
+
+
+```{r save competent non-competent}
+save(untreated_competent, file = "untreated_competent.Robject")
+save(untreated_noncompetent, file = "untreated_noncompetent.Robject")
+
+```
+
+```{r save_environment}
+save.image("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/110821_seurat_originaldataset_v2/mark_competent_cells_v2.RData")
+```
+
+```{r load environment}
+load("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/110821_seurat_originaldataset_v2/mark_competent_cells.RData")
+```

@@ -1,0 +1,1382 @@
+----
+tite: "v2 - Seurat analysis of hedgehog pathway activation"
+output:
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r setup_and_save}
+library(Seurat)
+library(monocle3)
+library(dplyr)
+library(ggplot2)
+
+setwd("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/110821_seurat_originaldataset_v2")
+```
+
+```{r function_definition}
+find_variable <- function(s1, variable_plot) {
+    s1 <- FindVariableFeatures(s1, selection.method = "vst", nfeatures = 2000)
+    # Identify the 10 most highly variable genes
+    #top10 <- head(VariableFeatures(s1), 10)
+    #print(plot1)
+    pdf(variable_plot)
+    # plot variable features with and without labels
+    plot1 <- VariableFeaturePlot(s1)
+    #plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+    print(plot1)
+    #print(CombinePlots(plots = list(plot1, plot2)))
+    dev.off()
+    return(s1)
+}
+
+print(sessionInfo())
+```
+
+```{r read_in_table}
+# Load S1
+s1 <- Read10X(data.dir = "../110819_fullrun_cellranger/S1_v2/outs/filtered_feature_bc_matrix")
+# Initialize the Seurat object with the raw (non-normalized data).
+s1 <- CreateSeuratObject(counts = s1, project = "untreated", min.cells = 3, min.features = 200)
+s2 <- Read10X(data.dir = "../110819_fullrun_cellranger/S2_v2/outs/filtered_feature_bc_matrix")
+# Initialize the Seurat object with the raw (non-normalized data).
+s2 <- CreateSeuratObject(counts = s2, project = "hr30", min.cells = 3, min.features = 200)
+s3 <- Read10X(data.dir = "../110819_fullrun_cellranger/S3_v2/outs/filtered_feature_bc_matrix")
+# Initialize the Seurat object with the raw (non-normalized data).
+s3 <- CreateSeuratObject(counts = s3, project = "hr24", min.cells = 3, min.features = 200)
+s4 <- Read10X(data.dir = "../110819_fullrun_cellranger/S4_v2/outs/filtered_feature_bc_matrix")
+# Initialize the Seurat object with the raw (non-normalized data).
+s4 <- CreateSeuratObject(counts = s4, project = "hr17", min.cells = 3, min.features = 200)
+
+#order = s1, s4, s2
+#Compute percent mitochondrial
+s1[["percent.mt"]] <- PercentageFeatureSet(s1, pattern = "^mt-")
+s2[["percent.mt"]] <- PercentageFeatureSet(s2, pattern = "^mt-")
+s3[["percent.mt"]] <- PercentageFeatureSet(s3, pattern = "^mt-")
+s4[["percent.mt"]] <- PercentageFeatureSet(s4, pattern = "^mt-")
+
+#Plot summary stats
+pdf("summary_plots_before_filter.pdf")
+print(VlnPlot(s1, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)) # How do i set axis for individual plots here?
+print(VlnPlot(s2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+print(VlnPlot(s3, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+print(VlnPlot(s4, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+plot1 <- FeatureScatter(s1, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(s1, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+plot1 <- FeatureScatter(s2, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(s2, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+plot1 <- FeatureScatter(s3, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(s3, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+plot1 <- FeatureScatter(s4, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(s4, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+dev.off()
+
+
+#Filter ***** IMportant *** Only keep cells with greater than 200 and less than 8000 genes and percent mt < 20
+#These filters are the same as in the Seurat tutorial.
+s1 <- subset(s1, subset = nFeature_RNA > 2000 & nFeature_RNA < 8000 & percent.mt < 20 & nCount_RNA > 10000)
+s2 <- subset(s2, subset = nFeature_RNA > 2000 & nFeature_RNA < 8000 & percent.mt < 20 & nCount_RNA > 10000)
+s3 <- subset(s3, subset = nFeature_RNA > 2000 & nFeature_RNA < 8000 & percent.mt < 20 & nCount_RNA > 10000)
+s4 <- subset(s4, subset = nFeature_RNA > 2000 & nFeature_RNA < 8000 & percent.mt < 20 & nCount_RNA > 10000)
+
+#Normalize ****importan***
+s1 <- NormalizeData(s1, normalization.method = "LogNormalize", scale.factor = 10000)
+s2 <- NormalizeData(s2, normalization.method = "LogNormalize", scale.factor = 10000)
+s3 <- NormalizeData(s3, normalization.method = "LogNormalize", scale.factor = 10000)
+s4 <- NormalizeData(s4, normalization.method = "LogNormalize", scale.factor = 10000)
+
+# All samples, should I normalize before or after?
+#all_samples <- merge(s1, y = c(s2, s3, s4), add.cell.ids = c("untreated", "hr30", "hr24", "hr17"), project = "3t3-SAG", merge.data = TRUE)
+#exclude S3 from the merged object
+#all_samples <- merge(s1, y = c(s2, s4), add.cell.ids = c("untreated", "hr30", "hr17"), project = "3t3-SAG", merge.data = TRUE)
+all_samples <- merge(s1, y = c(s2, s4), project = "3t3-SAG", merge.data = TRUE)
+print(all_samples)
+
+#Scale the data, this is important to prevent dominance of genes with high mean levels.
+s1 <- ScaleData(s1, features = rownames(s1))
+s2 <- ScaleData(s2, features = rownames(s2))
+s3 <- ScaleData(s3, features = rownames(s3))
+s4 <- ScaleData(s4, features = rownames(s4))
+all_samples <- ScaleData(all_samples, features = rownames(all_samples))
+
+
+#Plot summary stats
+pdf("summary_plots_after_filter.pdf")
+print(VlnPlot(s1, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)) # How do i set axis for individual plots here?
+print(VlnPlot(s2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+print(VlnPlot(s3, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+print(VlnPlot(s4, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3))
+plot1 <- FeatureScatter(s1, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(s1, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+plot1 <- FeatureScatter(s2, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(s2, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+plot1 <- FeatureScatter(s3, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(s3, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+plot1 <- FeatureScatter(s4, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(s4, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+print(CombinePlots(plots = list(plot1, plot2)))
+dev.off()
+```
+
+
+```{r run_pca}
+
+#Look at highly variable
+s1 <- find_variable(s1, "s1_variable.pdf")
+s2 <- find_variable(s2, "s2_variable.pdf")
+s3 <- find_variable(s3, "s3_variable.pdf")
+s4 <- find_variable(s4, "s4_variable.pdf")
+all_samples <- find_variable(all_samples, "all_samples_variable.pdf")
+
+#PCA
+s1 <- RunPCA(s1, npcs = 10)
+s2 <- RunPCA(s2, npcs = 10)
+s3 <- RunPCA(s3, npcs = 10)
+s4 <- RunPCA(s4, npcs = 10)
+all_samples <- RunPCA(all_samples)
+save(all_samples, file = "all_samples.Robject")
+
+#Plot the PCA
+pdf("allgenes_pca.pdf")
+print(VizDimLoadings(all_samples, dims = 1:2, reduction = "pca") + ggtitle("All samples"))
+print(VizDimLoadings(s1, dims = 1:2, reduction = "pca"))
+print(VizDimLoadings(s2, dims = 1:2, reduction = "pca"))
+print(VizDimLoadings(s3, dims = 1:2, reduction = "pca"))
+print(VizDimLoadings(s4, dims = 1:2, reduction = "pca"))
+print(DimPlot(all_samples, reduction = "pca", group.by ="orig.ident") + ggtitle("All samples"))
+print(DimPlot(s1, reduction = "pca"))
+print(DimPlot(s2, reduction = "pca"))
+print(DimPlot(s3, reduction = "pca"))
+print(DimPlot(s4, reduction = "pca"))
+dev.off()
+
+```
+
+
+
+```{r hedgehog_clustering}
+#Cluster by hedgehog genes alone    ## Read in hedgehog genes
+hedgehog_genes <- as.character(unlist(read.table("../110919_seurat/hedgehog_genes_mouse_names.tsv"), use.names = T))
+hedgehog_genes <- c("GFP-g1", hedgehog_genes)
+print(hedgehog_genes)
+
+hedgehog_clustering <- function() {
+  #load("all_samples.Robject")
+  all_samples_hedgehog <- all_samples[(rownames(all_samples) %in% hedgehog_genes), ]
+  all_samples_hedgehog <- find_variable(all_samples_hedgehog, "all_samples_hedgehog_variable.pdf")
+  all_samples_hedgehog <- RunPCA(all_samples_hedgehog, verbose = FALSE, npcs = 10)
+  
+  s1_hedgehog <- s1[(rownames(s1) %in% hedgehog_genes), ]
+  s1_hedgehog <- find_variable(s1_hedgehog, "all_samples_hedgehog_variable.pdf")
+  s1_hedgehog <- RunPCA(s1_hedgehog, verbose = FALSE, npcs = 10)
+  
+  s2_hedgehog <- s2[(rownames(s2) %in% hedgehog_genes), ]
+  s2_hedgehog <- find_variable(s2_hedgehog, "all_samples_hedgehog_variable.pdf")
+  s2_hedgehog <- RunPCA(s2_hedgehog, verbose = FALSE, npcs = 10)
+  
+  s3_hedgehog <- s3[(rownames(s3) %in% hedgehog_genes), ]
+  s3_hedgehog <- find_variable(s3_hedgehog, "all_samples_hedgehog_variable.pdf")
+  s3_hedgehog <- RunPCA(s3_hedgehog, verbose = FALSE, npcs = 10)
+  
+  s4_hedgehog <- s4[(rownames(s4) %in% hedgehog_genes), ]
+  s4_hedgehog <- find_variable(s4_hedgehog, "all_samples_hedgehog_variable.pdf")
+  s4_hedgehog <- RunPCA(s4_hedgehog, verbose = FALSE, npcs = 10)
+  
+  pdf("GFP_expression.pdf")
+  print(DimPlot(all_samples_hedgehog, reduction = "pca", pt.size = 0.5))
+  print(DimPlot(s1_hedgehog, reduction = "pca", pt.size = 0.5))
+  print(DimPlot(s2_hedgehog, reduction = "pca", pt.size = 0.5))
+  print(DimPlot(s3_hedgehog, reduction = "pca", pt.size = 0.5))
+  print(DimPlot(s4_hedgehog, reduction = "pca", pt.size = 0.5))
+  print(FeaturePlot(all_samples_hedgehog, features = "GFP-g1") + ggtitle("GFP-g1"))
+  print(FeaturePlot(s1_hedgehog, features = "GFP-g1") + ggtitle("GFP-g1"))
+  print(FeaturePlot(s2_hedgehog, features = "GFP-g1") + ggtitle("GFP-g1"))
+  print(FeaturePlot(s3_hedgehog, features = "GFP-g1") + ggtitle("GFP-g1"))
+  print(FeaturePlot(s4_hedgehog, features = "GFP-g1") + ggtitle("GFP-g1"))
+  dev.off()
+
+}
+``` 
+
+```{r save_and_load}
+save_and_load <- function() {
+  save(all_samples, file = "all_samples.Robject")
+  save(s1, file = "S1.Robject")
+  save(s2, file = "S2.Robject")
+  save(s3, file = "S3.Robject")
+  save(s4, file = "S4.Robject")
+  save(all_samples_hedgehog, file = "all_samples_hedgehog.Robject")
+  save(s1_hedgehog, file = "S1_hedgehog.Robject")
+  save(s2_hedgehog, file = "S2_hedgehog.Robject")
+  save(s3_hedgehog, file = "S3_hedgehog.Robject")
+  save(s4_hedgehog, file = "S4_hedgehog.Robject")
+  load(file = "all_samples.Robject")
+  load(file = "S1.Robject")
+  load(file = "S2.Robject")
+  load(file = "S3.Robject")
+  load(file = "S4.Robject")
+}
+```
+
+The plotting stuff goes below this.
+
+
+```{r scatter_plots}
+pdf("genes_scatter_plots.pdf")
+FeatureScatter(all_samples, "GFP-g1", "Gli1") + ggtitle("all samples") + xlim(c(0, 3.5)) + ylim(c(0,3))
+FeatureScatter(s1, "GFP-g1", "Gli1") + ggtitle("S1") + xlim(c(0, 3.5)) + ylim(c(0,3))
+FeatureScatter(s2, "GFP-g1", "Gli1") + ggtitle("S2") + xlim(c(0, 3.5)) + ylim(c(0,3))
+FeatureScatter(s3, "GFP-g1", "Gli1") + ggtitle("S3") + xlim(c(0, 3.5)) + ylim(c(0,3))
+FeatureScatter(s4, "GFP-g1", "Gli1") + ggtitle("S4") + xlim(c(0, 3.5)) + ylim(c(0,3))
+
+FeatureScatter(all_samples, "Ptch1", "Gli1") + ggtitle("all samples") + xlim(c(0, 3.5)) + ylim(c(0,3))
+FeatureScatter(s1, "Ptch1", "Gli1") + ggtitle("S1") + xlim(c(0, 3.5)) + ylim(c(0,3))
+FeatureScatter(s2, "Ptch1", "Gli1") + ggtitle("S2") + xlim(c(0, 3.5)) + ylim(c(0,3))
+FeatureScatter(s3, "Ptch1", "Gli1") + ggtitle("S3") + xlim(c(0, 3.5)) + ylim(c(0,3))
+FeatureScatter(s4, "Ptch1", "Gli1") + ggtitle("S4") + xlim(c(0, 3.5)) + ylim(c(0,3))
+
+FeatureScatter(all_samples, "Gli2", "Gli1") + ggtitle("all samples") + xlim(c(0, 3.5)) + ylim(c(0,3))
+FeatureScatter(s1, "Gli2", "Gli1") + ggtitle("S1") + xlim(c(0, 3.5)) + ylim(c(0,3))
+FeatureScatter(s2, "Gli2", "Gli1") + ggtitle("S2") + xlim(c(0, 3.5)) + ylim(c(0,3))
+FeatureScatter(s3, "Gli2", "Gli1") + ggtitle("S3") + xlim(c(0, 3.5)) + ylim(c(0,3))
+FeatureScatter(s4, "Gli2", "Gli1") + ggtitle("S4") + xlim(c(0, 3.5)) + ylim(c(0,3))
+dev.off()
+```
+
+```{r hedgehoggenes_expression}
+
+pdf("allgenes_GFPexpression.pdf")
+print(VlnPlot(object = all_samples, features = "GFP-g1") + ggtitle("GFP-g1"))
+print(FeaturePlot(all_samples, features = "GFP-g1") + ggtitle("GFP-g1"))
+print(FeaturePlot(s1, features = "GFP-g1") + ggtitle("GFP-g1"))
+print(FeaturePlot(s2, features = "GFP-g1") + ggtitle("GFP-g1"))
+print(FeaturePlot(s3, features = "GFP-g1") + ggtitle("GFP-g1"))
+print(FeaturePlot(s4, features = "GFP-g1") + ggtitle("GFP-g1"))
+
+for (feature1 in hedgehog_genes) {
+    print(feature1)
+    if(feature1 %in% rownames(all_samples) &&
+       feature1 %in% rownames(s1) &&
+       feature1 %in% rownames(s2) &&
+       feature1 %in% rownames(s3) &&
+       feature1 %in% rownames(s4)) {
+        print(VlnPlot(object = all_samples, features = feature1) + ggtitle(feature1))
+        print(FeaturePlot(all_samples, features = feature1) + ggtitle("All"))
+        print(FeaturePlot(s1, features = feature1) + ggtitle("S1"))
+        print(FeaturePlot(s2, features = feature1) + ggtitle("S2"))
+        print(FeaturePlot(s3, features = feature1) + ggtitle("S3"))
+        print(FeaturePlot(s4, features = feature1) + ggtitle("S4"))
+    }
+}
+dev.off()
+```
+
+```{r umap}
+#This is for reproducibility
+set.seed(600)
+#Run UMAP
+all_samples <- RunUMAP(all_samples, dims = 1:10, min.dist = 0.75)
+s1 <- RunUMAP(s1, dims = 1:10, min.dist = 0.75)
+s2 <- RunUMAP(s2, dims = 1:10, min.dist = 0.75)
+s3 <- RunUMAP(s3, dims = 1:10, min.dist = 0.75)
+s4 <- RunUMAP(s4, dims = 1:10, min.dist = 0.75)
+```
+```{r cell_cycle}
+convertHumanGeneList_mousename <- function(x){
+        require("biomaRt")
+        human = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+        mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+        genesV2 = getLDS(attributes = c("hgnc_symbol"), filters = "hgnc_symbol",
+                        values = x , mart = human, attributesL = c("mgi_symbol"),
+                        martL = mouse, uniqueRows=T)
+        mouseX <- unique(genesV2[, 2])
+        # Print the first 6 genes found to the screen
+        return(mouseX)
+}
+
+#Use cell-cycle genes from Seurat
+#s.genes <- cc.genes$s.genes
+#g2m.genes <- cc.genes$g2m.genes
+
+#Convert human gene names to mous
+#s.genes <- convertHumanGeneList_mousename(s.genes)
+#g2m.genes <- convertHumanGeneList_mousename(g2m.genes)
+#write.table(g2m.genes, file = "g2m_genes.tsv", row.name = F, sep = "\t", quote = F)
+#write.table(s.genes, file = "s_genes.tsv", row.name = F, sep = "\t", quote = F)
+
+s.genes<- read.table("../110919_seurat/s_genes.tsv", head = T, stringsAsFactors = F)$x
+g2m.genes <- read.table("../110919_seurat/g2m_genes.tsv", head = T, stringsAsFactors = F)$x
+cell_cycle_analysis <- function(sample, gene_subset, dimred_pdf) {
+    print(s.genes)
+    print(g2m.genes)
+
+    #Get a cell-cycle score for each cell
+    sample <- CellCycleScoring(sample, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+
+    pdf(dimred_pdf)
+    print(DimPlot(sample, reduction = "pca"))  
+    print(DimPlot(sample, reduction = "umap"))  
+    dev.off()
+
+    return(sample)
+}
+
+# Run cell-cycle analysis on all genes
+s1 <- cell_cycle_analysis(s1, NULL, "s1_allgenes_cellcycle.pdf")
+s2 <- cell_cycle_analysis(s2, NULL, "s2_allgenes_cellcycle.pdf")
+s3 <- cell_cycle_analysis(s3, NULL, "s3_allgenes_cellcycle.pdf")
+s4 <- cell_cycle_analysis(s4, NULL, "s4_allgenes_cellcycle.pdf")
+all_samples <- cell_cycle_analysis(all_samples, NULL, "allsamples_allgenes_cellcycle.pdf")
+```
+
+```{r plot_umap}
+pdf("allgenes_umap.pdf")
+print(DimPlot(all_samples, reduction = "umap") + ggtitle(label = "UMAP"))
+print(DimPlot(all_samples, reduction = "umap", group.by = "Phase"))
+print(FeaturePlot(all_samples, features = "GFP-g1", reduction = "umap") + ggtitle("GFP-g1"))
+
+print(DimPlot(s1, reduction = "umap") + ggtitle(label = "UMAP"))
+print(FeaturePlot(s1, features = "GFP-g1", reduction = "umap") + ggtitle("GFP-g1"))
+
+print(DimPlot(s2, reduction = "umap") + ggtitle(label = "UMAP"))
+print(FeaturePlot(s2, features = "GFP-g1", reduction = "umap") + ggtitle("GFP-g1"))
+
+print(DimPlot(s3, reduction = "umap") + ggtitle(label = "UMAP"))
+print(FeaturePlot(s3, features = "GFP-g1", reduction = "umap") + ggtitle("GFP-g1"))
+
+print(DimPlot(s4, reduction = "umap") + ggtitle(label = "UMAP"))
+print(FeaturePlot(s4, features = "GFP-g1", reduction = "umap") + ggtitle("GFP-g1"))
+print(DimPlot(all_samples, reduction = "umap", pt.size = 2.0,  group.by  = "orig.ident") + ggtitle(label = "") + theme(legend.position = "none") )
+dev.off()
+
+pdf("allgenes_cellcycle.png")
+print(DimPlot(all_samples, reduction = "umap", group.by = "Phase"))
+dev.off()
+```
+
+```{r hedgehog_umap}
+run_hedgehog_umap <- function() {
+  all_samples_hedgehog <- RunUMAP(all_samples_hedgehog, dims = 1:10, min.dist = 0.75)
+  s1_hedgehog <- RunUMAP(s1_hedgehog, dims = 1:10, min.dist = 0.75)
+  s2_hedgehog <- RunUMAP(s2_hedgehog, dims = 1:10, min.dist = 0.75)
+  s3_hedgehog <- RunUMAP(s3_hedgehog, dims = 1:10, min.dist = 0.75)
+  s4_hedgehog <- RunUMAP(s4_hedgehog, dims = 1:10, min.dist = 0.75)
+  
+  pdf("all_samples_hedgehog_umap.pdf")
+  print(DimPlot(all_samples_hedgehog, reduction = "umap", pt.size = 0.1) + ggtitle(label = "UMAP"))
+  dev.off()
+}
+```
+
+
+```{r }
+## Plot the GFP distributions:
+pdf("hedgehoggenes_histogram.pdf")
+for (gene in c("GFP-g1", "Gli1", "Gli2", "Ptch1")) {
+  print(gene)
+  hist(GetAssayData(s1)[gene, ], breaks = 100, main = "S1", probability = T, xlab = gene)
+  hist(GetAssayData(s2)[gene, ], breaks = 100, main = "S2", probability = T, xlab = gene)
+  hist(GetAssayData(s3)[gene, ], breaks = 100, main = "S3", probability = T, xlab = gene)
+  hist(GetAssayData(s4)[gene, ], breaks = 100, main = "S4", probability = T, xlab = gene)
+  
+  print(VlnPlot(object = all_samples, features = gene, split.by = NULL) + ggtitle(gene))
+  print(VlnPlot(object = s1, features = gene) + ggtitle(gene))
+  print(VlnPlot(object = s2, features = gene) + ggtitle(gene))
+  print(VlnPlot(object = s3, features = gene) + ggtitle(gene))
+  print(VlnPlot(object = s4, features = gene) + ggtitle(gene))
+}
+dev.off()
+
+```
+
+```{r deseq-dimensionreduction}
+#Get DE genes from DESEq, there's 136 genes with pval < 0.05, 237 genes with pval < 0.25
+deseq_genes_table <- read.table("../110619_deseq/deseq_results.table.2", sep = "\t", quote="\"", head = T)
+deseq_pval_cutoff <- 0.05
+deseq_genes_table <- dplyr::filter(deseq_genes_table, padj < deseq_pval_cutoff)
+#deseq_genes <- dplyr::sample_n(deseq_genes, sum(deseq_genes$padj < deseq_pval_cutoff, na.rm = T))
+deseq_genes <- as.character(deseq_genes_table$symbol)
+deseq_genes <- c(deseq_genes, "GFP-g1")
+deseq_genes <- na.omit(deseq_genes)
+write.table(deseq_genes, file = "deseq_significant_genes.tsv", quote = F, row.names = F, col.names = F)
+
+#require(stringr)
+#str_replace(deseq_genes, "_", "-")
+#print(deseq_genes)
+```
+
+```{r deseq-pca-umap}
+#Subset single-cell data to DEG
+s1_de <- s1[(rownames(s1) %in% deseq_genes), ]
+s2_de <- s2[(rownames(s2) %in% deseq_genes), ]
+s3_de <- s3[(rownames(s3) %in% deseq_genes), ]
+s4_de <- s4[(rownames(s4) %in% deseq_genes), ]
+#all_samples_de <- merge(s1_de, y = c(s2_de, s4_de), add.cell.ids = c("untreated", "hr30", "hr17"), project = "3t3-SAG", merge.data = TRUE)
+#Makes RNA velocity easier
+all_samples_de <- merge(s1_de, y = c(s2_de, s4_de), project = "3t3-SAG", merge.data = TRUE)
+all_samples_de <- ScaleData(all_samples_de, features = rownames(all_samples_de))
+
+# Subset after merge causes issues with running PCA, seems to retain PCA before subset and not re-run it.
+
+#Run PCA
+s1_de <- find_variable(s1_de, "s1_de_variable.pdf")
+s1_de <- RunPCA(s1_de, verbose = FALSE, npcs = 10)
+s2_de <- find_variable(s2_de, "s2_de_variable.pdf")
+s2_de <- RunPCA(s2_de, verbose = FALSE, npcs = 10)
+s3_de <- find_variable(s3_de, "s3_de_variable.pdf")
+s3_de <- RunPCA(s3_de, verbose = FALSE, npcs = 10)
+s4_de <- find_variable(s4_de, "s4_de_variable.pdf")
+s4_de <- RunPCA(s4_de, verbose = FALSE, npcs = 10)
+all_samples_de <- find_variable(all_samples_de, "s4_de_variable.pdf")
+all_samples_de <- RunPCA(all_samples_de, verbose = FALSE, npcs = 10)
+
+#Run UMAP
+s1_de <- RunUMAP(s1_de, dims = 1:10, min.dist = 0.75)
+s2_de <- RunUMAP(s2_de, dims = 1:10, min.dist = 0.75)
+s3_de <- RunUMAP(s3_de, dims = 1:10, min.dist = 0.75)
+s4_de <- RunUMAP(s4_de, dims = 1:10, min.dist = 0.75)
+all_samples_de <- RunUMAP(all_samples_de, dims = 1:10, min.dist = 0.75)
+```
+
+
+```{r plot_de_pca}
+pdf("deseqgenes_pca.pdf")
+print(DimPlot(all_samples_de, reduction = "pca", pt.size = 0.5) + ggtitle("All Samples"))
+print(DimPlot(s1_de, reduction = "pca", pt.size = 0.5))
+print(DimPlot(s2_de, reduction = "pca", pt.size = 0.5))
+print(DimPlot(s3_de, reduction = "pca", pt.size = 0.5))
+print(DimPlot(s4_de, reduction = "pca", pt.size = 0.5))
+
+print(FeaturePlot(all_samples_de, features = "GFP-g1", reduction = "pca") + ggtitle("All samples: GFP-g1"))
+print(FeaturePlot(s1_de, features = "GFP-g1", reduction = "pca") + ggtitle("S1: GFP-g1"))
+print(FeaturePlot(s2_de, features = "GFP-g1", reduction = "pca") + ggtitle("S2: GFP-g1"))
+print(FeaturePlot(s3_de, features = "GFP-g1", reduction = "pca") + ggtitle("S3: GFP-g1"))
+print(FeaturePlot(s4_de, features = "GFP-g1", reduction = "pca") + ggtitle("S4: GFP-g1"))
+
+DimHeatmap(all_samples_de, dims = 1:10, cells = 200, balanced = TRUE)
+DimHeatmap(s1_de, dims = 1:10, cells = 200, balanced = TRUE)
+DimHeatmap(s2_de, dims = 1:10, cells = 200, balanced = TRUE)
+DimHeatmap(s3_de, dims = 1:10, cells = 200, balanced = TRUE)
+DimHeatmap(s4_de, dims = 1:10, cells = 200, balanced = TRUE)
+dev.off()
+```
+
+```{r plot_de_umap}
+pdf("deseqgenes_umap.pdf")
+print(FeaturePlot(all_samples_de, features = "GFP-g1", reduction = "umap", cols = c("grey", "red"), max.cutoff = 0.1, min.cutoff = 0.09) + ggtitle("All samples: GFP-g1"))
+print(FeaturePlot(s1_de, features = "GFP-g1", reduction = "umap", cols = c("grey", "red"), max.cutoff = 0.1, min.cutoff = 0.09) + ggtitle("S1: GFP-g1"))
+print(FeaturePlot(s2_de, features = "GFP-g1", reduction = "umap", cols = c("grey", "red"), max.cutoff = 0.1, min.cutoff = 0.09) + ggtitle("S2: GFP-g1"))
+print(FeaturePlot(s3_de, features = "GFP-g1", reduction = "umap", cols = c("grey", "red"), max.cutoff = 0.1, min.cutoff = 0.09) + ggtitle("S3: GFP-g1"))
+print(FeaturePlot(s4_de, features = "GFP-g1", reduction = "umap", cols = c("grey", "red"), max.cutoff = 0.1, min.cutoff = 0.09) + ggtitle("S4: GFP-g1"))
+
+print(FeaturePlot(all_samples_de, features = "Gli1", reduction = "umap", cols = c("grey", "red"), max.cutoff = 0.1) + ggtitle("All Samples: Gli1"))
+print(FeaturePlot(s1_de, features = "Gli1", reduction = "umap", cols = c("grey", "red"), max.cutoff = 0.1) + ggtitle("S1: Gli1"))
+print(FeaturePlot(s2_de, features = "Gli1", reduction = "umap", cols = c("grey", "red"), max.cutoff = 0.1) + ggtitle("S2: Gli1"))
+print(FeaturePlot(s3_de, features = "Gli1", reduction = "umap", cols = c("grey", "red"), max.cutoff = 0.1) + ggtitle("S3: Gli1"))
+print(FeaturePlot(s4_de, features = "Gli1", reduction = "umap", cols = c("grey", "red"), max.cutoff = 0.1) + ggtitle("S4: Gli1"))
+
+dev.off()
+```
+
+```{r zero_prob}
+run_zero_prob <- function() {
+  ## S1
+  zero_prob <- c()
+  mean_expression <- c()
+  for (gene1 in rownames(s1)) { # This takes about 10-15 mins to run, can this be modified to use apply
+    zero_prob <- c(zero_prob, sum(GetAssayData(s1)[gene1, ] == 0)/length(GetAssayData(s1)[gene1, ]))
+    mean_expression <- c(mean_expression, mean(GetAssayData(s1)[gene1, ]))
+  }
+  pdf("s1_zero_probs.pdf")
+  hist(zero_prob)
+  hist(mean_expression)
+  dev.off()
+}
+```
+
+
+```{r cluster_using_4_genes}
+cluster_using_4_genes <- function() {
+  
+  four_genes <- c("GFP-g1", "Gli1", "Gli2", "Ptch1")
+  
+  #Subset single-cell data to DEG
+  s1_4g <- s1[(rownames(s1) %in% four_genes), ]
+  s2_4g <- s2[(rownames(s2) %in% four_genes), ]
+  s3_4g <- s3[(rownames(s3) %in% four_genes), ]
+  s4_4g <- s4[(rownames(s4) %in% four_genes), ]
+  
+  #Run PCA
+  s1_4g <- find_variable(s1_4g, "s1_de_variable.pdf")
+  s1_4g <- RunPCA(s1_4g, verbose = FALSE, npcs = 10)
+  s2_4g <- find_variable(s2_4g, "s2_de_variable.pdf")
+  s2_4g <- RunPCA(s2_4g, verbose = FALSE, npcs = 10)
+  s3_4g <- find_variable(s3_4g, "s3_de_variable.pdf")
+  s3_4g <- RunPCA(s3_4g, verbose = FALSE, npcs = 10)
+  s4_4g <- find_variable(s4_4g, "s4_de_variable.pdf")
+  s4_4g <- RunPCA(s4_4g, verbose = FALSE, npcs = 10)
+  
+  pdf("4genes_clusters.pdf")
+  print(DimPlot(s1_4g, reduction = "pca"))
+  print(DimPlot(s2_4g, reduction = "pca"))
+  print(DimPlot(s3_4g, reduction = "pca"))
+  print(DimPlot(s4_4g, reduction = "pca"))
+  dev.off()
+}
+
+```
+
+
+```{r compute_discrete_score_hedgehog_score}
+hedgehog_colors <- c('#feedde','#fdbe85','#fd8d3c','#d94701')
+compute_discrete_score <- function(sample, correlations_plot, feature_plot1, plot_identity = F) {
+  cutoff <- 0.1
+  
+  gfp <- GetAssayData(sample)["GFP-g1", ]
+  gli1 <- GetAssayData(sample)["Gli1", ]
+  gli2 <- GetAssayData(sample)["Gli2", ]
+  ptch1 <- GetAssayData(sample)["Ptch1", ]
+
+  gfp_discrete <- as.numeric(gfp > cutoff)
+  gli1_discrete <- as.numeric(gli1 > cutoff)
+  gli2_discrete <- as.numeric(gli2 > cutoff)
+  ptch1_discrete <- as.numeric(ptch1 > cutoff)
+  
+  #pdf(correlations_plot)
+  #scatterplot.density(gfp, gli1)
+  #scatterplot.density(gli2, gli1)
+  #scatterplot.density(ptch1, gli1)
+  #dev.off()
+  
+  print(table(gfp_discrete, gli1_discrete))
+  print(table(gfp_discrete, ptch1_discrete))
+  print(table(gfp_discrete, gli2_discrete))
+  print(table(gli2_discrete, gli1_discrete))
+  print(table(ptch1_discrete, gli1_discrete))
+  print(table(gli2_discrete, ptch1_discrete))
+  
+  hedgehog <- gfp_discrete + gli1_discrete + gli2_discrete + ptch1_discrete
+  print(c("mean", mean(hedgehog)))
+  #AddMetaData(sample, hedgehog, col.name = "hedgehog")
+  sample[["hedgehog"]] <- hedgehog
+  
+  # Plot the histogram of hedgehog scores
+  pdf(feature_plot1)
+    hist(hedgehog, breaks = 100, main = "", xlim = c(0, 4))
+  dev.off()
+  more_plots <- function() {
+    if(plot_identity) {
+    print(DimPlot(sample, reduction = "umap", group.by = "orig.ident") + ggtitle(label = "UMAP"))
+    }
+    #print(DimPlot(sample, reduction = "umap", group.by = "Phase") + ggtitle(label = "UMAP"))
+    print(FeaturePlot(sample, features = "hedgehog", reduction = "umap", cols = hedgehog_colors))
+    if(plot_identity) {
+      print(DimPlot(sample, reduction = "pca", group.by = "orig.ident") + ggtitle(label = "PCA"))
+    }
+    #print(DimPlot(sample, reduction = "pca", group.by = "Phase") + ggtitle(label = "PCA"))
+    print(FeaturePlot(sample, features = "hedgehog", reduction = "pca", cols = hedgehog_colors))
+  }
+  return(sample)
+  
+}
+s1 <- compute_discrete_score(s1, "s1_correlations.pdf", "s1_hedgehogfeature.pdf")
+s4 <- compute_discrete_score(s4, "s4_correlations.pdf", "s4_hedgehogfeature.pdf")
+s2 <- compute_discrete_score(s2, "s2_correlations.pdf", "s2_hedgehogfeature.pdf")
+#s3 <- compute_discrete_score(s3, "s3_correlations.pdf", "s3_hedgehogfeature.pdf")
+all_samples <- compute_discrete_score(all_samples, "all_samples_correlations.pdf", "allsamples_hedgehogfeature.pdf", plot_identity = T)
+
+s1_de <- compute_discrete_score(s1_de, "s1_de_correlations.pdf", "s1_de_hedgehogfeature.pdf")
+s2_de <- compute_discrete_score(s2_de, "s2_de_correlations.pdf", "s2_de_hedgehogfeature.pdf")
+s3_de <- compute_discrete_score(s3_de, "s3_de_correlations.pdf", "s3_de_hedgehogfeature.pdf")
+s4_de <- compute_discrete_score(s4_de, "s4_de_correlations.pdf", "s4_de_hedgehogfeature.pdf")
+all_samples_de <- compute_discrete_score(all_samples_de, "all_samples_de_correlations.pdf", "all_samples_de_hedgehogfeature.pdf", plot_identity = T)
+
+```
+
+
+```{r compute_pa_given_b}
+compute_pa_given_b <- function(sample, genes) {
+  cutoff <- 0.1
+  #print(genes)
+  gene1 <- genes[1]; gene2 <- genes[2]
+  
+  # Compute p_b_a and p_b_nota
+  #print(ncol(sample))
+  g1_exp <- FetchData(object = sample, vars = gene1)
+  sample_a <- sample[, which(x = g1_exp > cutoff)]
+  g2_exp <- FetchData(object = sample_a, vars = gene2)
+  sample_b_a <- sample[, which(x = g2_exp > cutoff)]
+  p_b_a <- ncol(sample_b_a)/ncol(sample_a)
+  
+  g1_exp <- FetchData(object = sample, vars = gene1)
+  sample_nota <- sample[, which(x = g1_exp <= cutoff)]
+  g2_exp <- FetchData(object = sample_nota, vars = gene2)
+  sample_b_nota <- sample[, which(x = g2_exp > cutoff)]
+  p_b_nota <- ncol(sample_b_nota)/ncol(sample_nota)
+  
+  
+  # Compute p_a_b and p_a_notb
+  #print(ncol(sample))
+  g2_exp <- FetchData(object = sample, vars = gene2)
+  sample_b <- sample[, which(x = g2_exp > cutoff)]
+  g1_exp <- FetchData(object = sample_b, vars = gene1)
+  sample_a_b <- sample_b[, which(x = g1_exp > cutoff)]
+  p_a_b <- ncol(sample_a_b)/ncol(sample_b)
+  
+  g2_exp <- FetchData(object = sample, vars = gene2)
+  sample_notb <- sample[, which(x = g2_exp <= cutoff)]
+  g1_exp <- FetchData(object = sample_notb, vars = gene1)
+  sample_a_notb <- sample_notb[, which(x = g1_exp > cutoff)]
+  p_a_notb <- ncol(sample_a_notb)/ncol(sample_notb)
+ 
+  p_a <- ncol(sample_a)/ncol(sample)
+  p_b <- ncol(sample_b)/ncol(sample)
+  
+  #The values are n, n_a, n_b, p_a, p_b, n_b_a, n_b_nota, p_b_a, p_b_nota, n_a_b, n_a_notb, p_a_b, p_a_notb
+  return(c(ncol(sample), ncol(sample_a), ncol(sample_b), p_a, p_b, ncol(sample_b_a), ncol(sample_b_nota), p_b_a, p_b_nota, p_b_a/p_b_nota))
+
+}
+
+genes <- c("GFP-g1", "Gli1", "Gli2", "Ptch1")
+combinations <- combn(genes, 2, simplify = F)
+print(str(combinations))
+print(combinations[[1]])
+for (combination1 in combinations) {
+  print(c(combination1, compute_pa_given_b(s1, combination1)))
+}
+for (combination1 in combinations) {
+  print(c(combination1, compute_pa_given_b(s2, combination1)))
+}
+for (combination1 in combinations) {
+  print(c(combination1, compute_pa_given_b(s3, combination1)))
+}
+for (combination1 in combinations) {
+  print(c(combination1, compute_pa_given_b(s4, combination1)))
+}
+
+```
+
+```{r cell_cycle_plots}
+pdf("cell_cycle_histograms.pdf")
+for (sample in c(s1, s2, s3, s4, all_samples)) {
+  print(sample@project.name)
+  barplot(table(sample@meta.data$Phase)/length(sample@meta.data$Phase), main = sample@project.name)
+}
+
+# Filter to cells that are in G1 alone. The idea is that 
+all_samples_G1 <- all_samples[, all_samples@meta.data$Phase == "G1"]
+all_samples_G2M <- all_samples[, all_samples@meta.data$Phase == "G2M"]
+all_samples_S <- all_samples[, all_samples@meta.data$Phase == "S"]
+print(DimPlot(all_samples_G1, reduction = "umap", group.by = "orig.ident")  + ggtitle("All samples: G1 cells"))
+print(FeaturePlot(all_samples_G1, features = "hedgehog", reduction = "umap", min.cutoff = 1, max.cutoff = 4))
+print(DimPlot(all_samples_G2M, reduction = "umap", group.by = "orig.ident")  + ggtitle("All samples: G2/M cells"))
+print(FeaturePlot(all_samples_G2M, features = "hedgehog", reduction = "umap", min.cutoff = 1, max.cutoff = 4))
+print(DimPlot(all_samples_S, reduction = "umap", group.by = "orig.ident") + ggtitle("All samples: S cells"))
+print(FeaturePlot(all_samples_S, features = "hedgehog", reduction = "umap", min.cutoff = 1, max.cutoff = 4))
+require(beeswarm)
+for (sample in c(s1, s2, s3, s4, all_samples)) {
+  sample_G1 <- sample[, sample@meta.data$Phase == "G1"]
+  hist(sample_G1@meta.data$hedgehog, breaks = 100, main = paste(sample@project.name, "G1"), probability = T)
+  sample_G2M <- sample[, sample@meta.data$Phase == "G2M"]
+  hist(sample_G2M@meta.data$hedgehog, breaks = 100, main = paste(sample@project.name, "G2M"), probability = T)
+  sample_S <- sample[, sample@meta.data$Phase == "S"]
+  hist(sample_S@meta.data$hedgehog, breaks = 100, main = paste(sample@project.name, "S"), probability = T)
+  boxplot(sample_G1@meta.data$hedgehog, sample_G2M@meta.data$hedgehog, sample_S@meta.data$hedgehog)
+  beeswarm(list("G1" <- sample_G1@meta.data$hedgehog, "G2M" <- sample_G2M@meta.data$hedgehog, "S" <- sample_S@meta.data$hedgehog), main = 'beeswarm')
+}
+dev.off()
+
+```
+
+```{r different_hedgehog_score}
+
+# hedgehog new score
+#Get DE genes from DESEq, there's 136 genes with pval < 0.05, 237 genes with pval < 0.25
+deseq_genes2 <- read.table("../110619_deseq/deseq_results.table.2", sep = "\t", quote="\"", head = T)
+head(deseq_genes2)
+
+deseq_pval_cutoff <- 0.05
+deseq_genes2 <- dplyr::filter(deseq_genes2, padj < deseq_pval_cutoff)
+#Only use upregulated genes
+deseq_genes2 <- dplyr::filter(deseq_genes2, log2FoldChange > 0)
+
+#deseq_genes <- dplyr::sample_n(deseq_genes, sum(deseq_genes$padj < deseq_pval_cutoff, na.rm = T))
+print(nrow(deseq_genes2))
+deseq_upregulated_genes <- as.character(deseq_genes2$symbol)
+deseq_upregulated_genes <- c(deseq_upregulated_genes, "GFP-g1")
+deseq_upregulated_genes <- na.omit(deseq_upregulated_genes)
+hedgehog_score <- rep(0, ncol(all_samples))
+cutoff <- 0.1
+#for (gene1 in deseq_upregulated_genes) {
+for (gene1 in hedgehog_genes) {
+  print(gene1)
+  if(gene1 %in% rownames(all_samples)) {
+    g1_expression <- GetAssayData(all_samples)[gene1, ]
+    g1_discrete <- as.numeric(g1_expression > cutoff)
+    hedgehog_score <- hedgehog_score + g1_discrete
+  }
+}
+print(length(hedgehog_score))
+all_samples[["hedgehog2"]] <- hedgehog_score
+
+pdf("alternate_hedgehog_score.pdf")
+#print(FeaturePlot(all_samples, features = "hedgehog", reduction = "umap"))
+print(DimPlot(all_samples, reduction = "umap", group.by = "orig.ident"))
+hist(hedgehog_score) # This looks like a horrible score, why???
+hist(all_samples@meta.data$hedgehog)
+dev.off()
+
+#Look at correlation with Gli1
+gene1 <- "Gli1"
+cor_coeffs <- c()
+pdf("correlations_with_gli1.pdf")
+new_score_genes <- c(gene1)
+for (gene2 in deseq_genes) {
+  if(gene2 %in% rownames(all_samples)) {
+    g1_expression <- GetAssayData(all_samples)[gene1, ]
+    g2_expression <- GetAssayData(all_samples)[gene2, ]
+    cor1 <- cor(g1_expression, g2_expression, method = "spearman")
+    if (cor.test(g1_expression, g2_expression)$p.value < 0.05 & abs(cor1) > 0.2) {
+      if(cor1 < 0) {
+        print("negative correlation")
+      }
+      print(gene2)
+      plot(g1_expression, g2_expression, xlab = gene1, ylab = gene2, main = cor1)
+      cor_coeffs <- c(cor_coeffs, cor1)
+      new_score_genes <- c(gene2, new_score_genes)
+    }
+  }
+}
+hist(cor_coeffs, xlab = "Correlation with Gli1")
+dev.off()
+print(length(new_score_genes))
+
+hedgehog_score <- rep(0, ncol(all_samples))
+for (gene1 in new_score_genes) {
+  print(gene1)
+  if(gene1 %in% rownames(all_samples)) { # This is redundant, they should all be in this data structure.
+    g1_expression <- GetAssayData(all_samples)[gene1, ]
+    g1_discrete <- as.numeric(g1_expression > cutoff)
+    hedgehog_score <- hedgehog_score + g1_discrete
+  }
+}
+print(length(hedgehog_score))
+all_samples[["hedgehog2"]] <- hedgehog_score
+all_samples_de[["hedgehog2"]] <- hedgehog_score
+all_samples[["hedgehog2_discrete"]] <- hedgehog_score > 15
+all_samples_de[["hedgehog2_discrete"]] <- hedgehog_score > 15
+
+
+pdf("alternate_hedgehog_score.pdf")
+print(FeaturePlot(all_samples, features = "hedgehog2", reduction = "umap", min.cutoff = 15))
+print(DimPlot(all_samples, reduction = "umap", group.by = "orig.ident"))
+print(FeaturePlot(all_samples_de, features = "hedgehog2", reduction = "umap", min.cutoff = 15))
+print(DimPlot(all_samples_de, reduction = "umap", group.by = "orig.ident"))
+hist(hedgehog_score) # This looks like a horrible score, why???
+hist(all_samples@meta.data$hedgehog, xlab = "4gene hedgehog score")
+dev.off()
+
+```
+
+```{r cluster_based_on_degenes}
+all_samples_de <- FindNeighbors(all_samples_de, dims = 1:10)
+print(all_samples_de)
+all_samples_de <- FindClusters(all_samples_de, resolution = 0.5)
+
+pdf("all_samples_hedgehog_cluster.pdf")
+print(DimPlot(all_samples_de, reduction = "umap", group.by = "orig.ident"))
+
+print(DimPlot(all_samples_de, reduction = "umap", cells.highlight = paste(colnames(s1), "_1", sep = ""))+ 
+          scale_color_manual(labels = c("Rest", "Untreated"), values = c("grey", "#619CFF")) )
+
+print(DimPlot(all_samples_de, reduction = "umap", cells.highlight = paste(colnames(s4), "_3", sep = ""))+ 
+          scale_color_manual(labels = c("Rest", "hr17"), values = c("grey", "#F8766D")))
+
+print(DimPlot(all_samples_de, reduction = "umap", cells.highlight = paste(colnames(s2), "_2", sep = ""))+ 
+          scale_color_manual(labels = c("Rest", "hr30"), values = c("grey", "#00BA38")))
+
+print(DimPlot(all_samples_de, reduction = "umap", group.by = "seurat_clusters"))
+print(FeaturePlot(all_samples_de, features = "hedgehog", reduction = "umap",  min.cutoff = 1, max.cutoff = 4))
+
+print(DimPlot(all_samples_de, reduction = "pca", group.by = "orig.ident"))
+print(FeaturePlot(all_samples_de, features = "hedgehog", reduction = "pca",  min.cutoff = 1, max.cutoff = 4))
+#print(FeaturePlot(all_samples_de, features = "hedgehog2", reduction = "pca", min.cutoff = 15))
+#Hedgehog2 might have a sensitivity issue and miss some true positive cells
+dev.off()
+
+print(FeaturePlot(s1_de, features = "hedgehog", reduction = "umap",  min.cutoff = 1, max.cutoff = 4))
+all_samples_de_cluster2 <- all_samples_de[, all_samples_de@meta.data$seurat_clusters == 2]
+all_samples_de_cluster1 <- all_samples_de[, all_samples_de@meta.data$seurat_clusters == 1]
+all_samples_de_cluster0 <- all_samples_de[, all_samples_de@meta.data$seurat_clusters == 0]
+
+#Cluster 2 seems to correlate with hedgehog expression
+cluster2de.markers <- FindMarkers(all_samples_de, ident.1 = 2, min.pct = 0, logfc.threshold = 0.1)
+sum(rownames(cluster2de.markers) %in% deseq_genes)/nrow(cluster2de.markers)
+sum(rownames(cluster2de.markers) %in% deseq_genes)/length(deseq_genes)
+print(table(all_samples_de_cluster2@meta.data$orig.ident)) # S1  S2  S4   12 526 250 
+print(table(all_samples_de@meta.data$orig.ident))
+
+#Get the S1 cells that are in the hedgehog cluster
+all_samples_de_cluster2_s1 <- all_samples_de_cluster2[, all_samples_de_cluster2@meta.data$orig.ident == "untreated"]
+all_samples_de_cluster1_s1 <- colnames(all_samples_de_cluster1[, all_samples_de_cluster1@meta.data$orig.ident == "untreated"])
+all_samples_de_cluster0_s1 <- colnames(all_samples_de_cluster0[, all_samples_de_cluster0@meta.data$orig.ident == "untreated"])
+
+all_samples_de_cluster2_s2 <- all_samples_de_cluster2[, all_samples_de_cluster2@meta.data$orig.ident == "hr30"]
+all_samples_de_cluster2_s4 <- all_samples_de_cluster2[, all_samples_de_cluster2@meta.data$orig.ident == "hr17"]
+
+#Jan 16, 2020
+print(DimPlot(all_samples_de, reduction = "umap", cells.highlight = colnames(all_samples_de_cluster0_s1))) 
+print(DimPlot(all_samples_de, reduction = "umap", cells.highlight = colnames(all_samples_de_cluster1_s1)))
+cluster_1_0_s1_de <- FindMarkers(all_samples_de, ident.1 = all_samples_de_cluster1_s1, ident.2 = all_samples_de_cluster0_s1, logfc.threshold = 0.1)
+print(cluster_1_0_s1_de) %>% dplyr::arrange(avg_logFC)
+
+          #scale_color_manual(labels = c("Rest", "S"), values = c("grey", "#619CFF"))))
+
+hist(all_samples_de_cluster2@meta.data$hedgehog, breaks = 100)
+hist(all_samples_de_cluster2_s1@meta.data$hedgehog, breaks = 100) #2 cells have a score of 2, rest are scores of zero and one.
+
+pdf("cellcycle_hedgehogcluster.pdf")
+barplot(table(all_samples_de_cluster2_s1@meta.data$Phase), main = "S1: cluster2")
+barplot(prop.table(table(all_samples_de_cluster2_s1@meta.data$Phase)), main = "S1: cluster2")
+barplot(table(s1_de@meta.data$Phase), main = "S1")
+barplot(prop.table(table(s1_de@meta.data$Phase)), main = "S1")
+
+barplot(table(all_samples_de_cluster2_s2@meta.data$Phase), main = "S2: cluster2")
+barplot(prop.table(table(all_samples_de_cluster2_s2@meta.data$Phase)), main = "S2: cluster2")
+barplot(table(s2_de@meta.data$Phase), main = "S2")
+barplot(prop.table(table(s2_de@meta.data$Phase)), main = "S2")
+
+barplot(table(all_samples_de_cluster2_s4@meta.data$Phase), main = "S4: cluster2")
+barplot(prop.table(table(all_samples_de_cluster2_s4@meta.data$Phase)), main = "S4: cluster2")
+barplot(table(s4_de@meta.data$Phase), main = "S4")
+barplot(prop.table(table(s4_de@meta.data$Phase)), main = "S4")
+
+#histogram of expression in S1
+print(hist(s1@meta.data$hedgehog, breaks = 100)) # Rules out cells in active state in my opinion.
+print(hist(s2@meta.data$hedgehog, breaks = 100)) 
+print(hist(s3@meta.data$hedgehog, breaks = 100)) 
+print(hist(s4@meta.data$hedgehog, breaks = 100)) 
+
+dev.off()
+
+
+# Find differential genes between cluster 2 and cluster zero in the hr30 sample, these are teh cells that show the hedgehog response and the cells taht don't. Why do some cells show the response and the others don't?
+all_samples_de_cluster2_s2_cells <- colnames(all_samples_de_cluster2[, all_samples_de_cluster2@meta.data$orig.ident == "hr30"])
+all_samples_de_cluster0_s2_cells <- colnames(all_samples_de_cluster0[, all_samples_de_cluster0@meta.data$orig.ident == "hr30"])
+cluster_0_2_s2_de <- FindMarkers(all_samples_de, ident.1 = all_samples_de_cluster2_s2_cells, ident.2 = all_samples_de_cluster0_s2_cells, logfc.threshold = 0.1)
+#Looks like Mt1, Mt2, Il1rl1, Plin2, Cmtm4, Sox4, Tubb2b are top hits here, why.
+#> colnames(cluster_0_2_s2_de[cluster_0_2_s2_de$avg_logFC < 0, ])
+#> FeaturePlot(all_samples_de, features = "Mt1")
+#> FeaturePlot(all_samples_de, features = "Mt2")
+#> FeaturePlot(all_samples_de, features = "Il1rl1")
+#> FeaturePlot(all_samples_de, features = "Plin2")
+#> FeaturePlot(all_samples_de, features = "Cmtm4")
+#> FeaturePlot(all_samples_de, features = "Sox4")
+#> FeaturePlot(all_samples_de, features = "Tubb2b")
+#> FeaturePlot(all_samples_de, features = "Akr1b3")
+#The feature plots are not really helpful, these genes are broadly expressed across all cells, the effect size is minimal. 
+
+#Find DE genes between cluster 1 and cluster 0 for the untreated cells, these are the cells which showed a response versus not.
+all_samples_de_cluster1_s1_cells <- colnames(all_samples_de_cluster1[, all_samples_de_cluster1@meta.data$orig.ident == "untreated"]) # the cluster that seems to respond
+all_samples_de_cluster0_s1_cells <- colnames(all_samples_de_cluster0[, all_samples_de_cluster0@meta.data$orig.ident == "untreated"])
+cluster_1_0_s1_de <- FindMarkers(all_samples_de, ident.1 = all_samples_de_cluster1_s1_cells, ident.2 = all_samples_de_cluster0_s1_cells, min.cells.feature = 50)
+cluster_1_0_s1_de$gene <- rownames(cluster_1_0_s1_de)
+cluster_1_0_s1_de_plus_genes <- cluster_1_0_s1_de[cluster_1_0_s1_de$avg_logFC >0, "gene"]
+
+plus_genes <- cluster_1_0_s1_de[cluster_1_0_s1_de$avg_logFC > 0, "gene" ]
+write.table(plus_genes, file = "s1_cluster01_plus_genes_v1.tsv", row.names = F, col.names = F, quote = F)
+
+neg_genes <- cluster_1_0_s1_de[cluster_1_0_s1_de$avg_logFC < 0, "gene"]
+write.table(neg_genes, file = "s1_cluster01_neg_genes_v1.tsv", row.names = F, col.names = F, quote = F)
+
+```
+```{r save}
+save(all_samples_de, file = "all_samples_de.Robject")
+```
+
+```{r cluster_based_on_allgenes}
+
+all_samples <- FindNeighbors(all_samples, dims = 1:10)
+
+#all_samples <- FindClusters(all_samples, resolution = 0.5, algorithm = 1) #Use the Louvain algorithm
+all_samples <- FindClusters(all_samples, resolution = 0.3, algorithm = 1) #Use the Louvain algorithm, reduce the resolution
+
+DimPlot(all_samples, label = TRUE)
+DimPlot(all_samples, group.by = "orig.ident",label = TRUE)
+
+```
+
+```{r cellcycle}
+s_cells <- colnames(all_samples[, all_samples@meta.data$Phase == "S"])
+g1_cells <- colnames(all_samples[, all_samples@meta.data$Phase == "G1"])
+g2m_cells <- colnames(all_samples[, all_samples@meta.data$Phase == "G2M"])
+
+```
+
+
+```{r plot_the_Clusters}
+#manual colors
+pdf("all_samples_clusters.pdf")
+print(DimPlot(all_samples, reduction = "umap", group.by = "orig.ident"))
+print(DimPlot(all_samples, reduction = "umap", group.by = "Phase"))
+
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = paste(colnames(s1), "_1", sep = ""))+ 
+          scale_color_manual(labels = c("Rest", "Untreated"), values = c("grey", "#619CFF")) )
+
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = paste(colnames(s4), "_3", sep = ""))+ 
+          scale_color_manual(labels = c("Rest", "hr17"), values = c("grey", "#F8766D")))
+
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = paste(colnames(s2), "_2", sep = ""))+ 
+          scale_color_manual(labels = c("Rest", "hr30"), values = c("grey", "#00BA38")))
+
+#Plot hedgehog expression
+print(FeaturePlot(all_samples, features = "hedgehog", reduction = "umap", min.cutoff = 1, max.cutoff = 4))
+
+#Plot cellcycle cells separately
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = s_cells) + 
+          scale_color_manual(labels = c("Rest", "S"), values = c("grey", "#619CFF")) )
+
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = g1_cells) + 
+          scale_color_manual(labels = c("Rest", "G1"), values = c("grey", "#F8766D")))
+
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = g2m_cells) + 
+          scale_color_manual(labels = c("Rest", "G2M"), values = c("grey", "#00BA38")))
+
+print(DimPlot(all_samples, reduction = "umap", group.by = "Phase"))
+print(DimPlot(all_samples, reduction = "umap", group.by = "seurat_clusters"))
+
+print(FeaturePlot(all_samples, features = "Jun", reduction = "umap"))
+print(FeaturePlot(all_samples, features = "Fos", reduction = "umap"))
+print(FeaturePlot(all_samples, features = "Egr1", reduction = "umap"))
+print(DimPlot(all_samples, reduction = "pca", group.by = "orig.ident"))
+print(DimPlot(all_samples, reduction = "pca", group.by = "seurat_clusters"))
+print(DimPlot(all_samples, reduction = "pca", group.by = "Phase"))
+print(DimHeatmap(all_samples, dims = c(1, 2)))
+dev.off()
+```
+
+```{r get_cluster_markers}
+#Cluster 2 here too seems to correlate with hedgehog expression
+cluster2.markers <- FindMarkers(all_samples, ident.1 = 2, min.pct = 0, logfc.threshold = 0.1)
+cluster3.markers <- FindMarkers(all_samples_de, ident.1 = 3, min.pct = 0, logfc.threshold = 0.1)
+write.table("cluster3.markers")
+#cluster5_6_markers <- FindMarkers(all_samples, ident.1 = c(5,6), min.pct = 0, logfc.threshold = 0.1)
+
+print(nrow(cluster2.markers))
+
+sum(rownames(cluster2.markers) %in% deseq_genes)/nrow(cluster2.markers)
+sum(deseq_genes %in% rownames(cluster2.markers)) #There are 74 deseq genes that mark this cluster.
+all_samples_cluster2 <- all_samples[, all_samples@meta.data$seurat_clusters == 2]
+allsamples_cluster2_s1 <- all_samples_cluster2[, all_samples_cluster2@meta.data$orig.ident == "untreated"]
+
+hist(all_samples_cluster2@meta.data$hedgehog, breaks = 100)
+hist(allsamples_cluster2_s1@meta.data$hedgehog, breaks = 100)
+
+print(all_samples_cluster2)
+print(table(all_samples_cluster2@meta.data$orig.ident))#S1  S2  S4  14 374 219 
+print(table(all_samples@meta.data$orig.ident)) #   S1   S2   S4  1253 1146  957 
+allsamples_cluster2_s2 <- sort(colnames(all_samples_cluster2[, all_samples_cluster2@meta.data$orig.ident == "hr30"]))
+allsamples_cluster2_s1 <- sort(colnames(all_samples_cluster2[, all_samples_cluster2@meta.data$orig.ident == "untreated"]))
+
+WhichCells(all_samples_cluster2, orig.ident = "untreated")
+
+# There are 14 cells from S1 in cluster2, wow! Could it be the error rate of the clustering, but the cluster2 marker genes makes sense
+#Get the S1 cells that are in the hedgehog cluster, These have very low levels of hedgehog score, 10 of them have a score of zero. This is suspicious, why are these cells in this cluster, are the other DE genes due to a different process.
+print(sort(colnames(all_samples_cluster2[, all_samples_cluster2@meta.data$orig.ident == "untreated"])))
+s2_allsamples <- sort(colnames(all_samples_cluster2[, all_samples_cluster2@meta.data$orig.ident == "hr30"]))
+
+allclusters_markers <- FindAllMarkers(all_samples, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.1)
+top_markers <- allclusters_markers %>% group_by(cluster) %>% top_n(n = 50, wt = avg_logFC)
+write.table(top_markers, row.names = F, sep = "\t", quote = F, file = "all_samples_cluster_markers.tsv") 
+#What are the markers for 5 and 6
+
+print(FeaturePlot(all_samples, features = "Top2a", reduction = "umap", min.cutoff = 1, max.cutoff = 4))
+print(FeaturePlot(all_samples, features = "Tk1", reduction = "umap", min.cutoff = 1, max.cutoff = 4))
+
+#cluster5_6 <-  FindMarkers(all_samples, ident.1 = c(5,6), min.pct = 0.1)
+#write.table(cluster5_6, row.names = T, sep = "\t", quote = F, file = "cluster5_6_markers.tsv") 
+
+
+```
+All the cluster2 marker genes are in deseq genes. It's weird that there' such little overlap between cells in the cluster depending on which genes were used to do the clustering: all genes or de genes.
+
+
+```{r plot_variances}
+head(s1)
+nrow(s1)
+ncol(s1)
+means <- apply(GetAssayData(s1), 1, mean)
+vars <- apply(GetAssayData(s1), 1, var)
+length(vars)
+length(means)
+plot((means), (vars))
+GetAssayData(s1)
+print(sort(deseq_genes))
+```
+
+```{r qc_on_umap}
+pdf("all_samples_allgenes_qc_umap.pdf")
+print(FeaturePlot(all_samples, features = "nFeature_RNA", reduction = "umap"))
+print(FeaturePlot(all_samples, features = "nCount_RNA", reduction = "umap"))
+print(FeaturePlot(all_samples, features = "percent.mt", reduction = "umap"))
+print(FeaturePlot(all_samples, features = "nFeature_RNA", reduction = "pca"))
+print(FeaturePlot(all_samples, features = "nCount_RNA", reduction = "pca"))
+print(FeaturePlot(all_samples, features = "percent.mt", reduction = "pca"))
+dev.off()
+```
+```{r save_all}
+  save(all_samples, file = "all_samples.Robject")
+  save(s1, file = "S1.Robject")
+  save(s2, file = "S2.Robject")
+  save(s3, file = "S3.Robject")
+  save(s4, file = "S4.Robject")
+```
+
+
+```{r responders_nonresponders_differences} 
+print(DimPlot(all_samples, group.by = "seurat_clusters", label = T))
+print(DimPlot(all_samples, group.by = "orig.ident"))
+FeaturePlot(all_samples, features = "hedgehog", reduction = "umap", min.cutoff = 1, max.cutoff = 4)
+
+untreated_competent <- colnames(all_samples[, all_samples@meta.data$seurat_clusters %in% c(3) & all_samples@meta.data$orig.ident == "untreated"])
+untreated_noncompetent <- colnames(all_samples[, all_samples@meta.data$seurat_clusters %in% c(0,2) & all_samples@meta.data$orig.ident == "untreated"])
+
+
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = untreated_noncompetent, group.by = "orig.ident") + ggtitle("Untreated: non-competent"))
+print(DimPlot(all_samples, reduction = "umap", cells.highlight = untreated_competent, group.by = "orig.ident") + ggtitle("Untreated: competent"))
+```
+```{r degenes}
+#Find differentially expressed genes betweeen responders and non-responders
+responder_degenes <- FindMarkers(all_samples, ident.1 = untreated_competent, ident.2 = untreated_noncompetent, logfc.threshold = 0.1)
+print(responder_degenes)
+print(dim(responder_degenes))
+responder_degenes$gene <- rownames(responder_degenes)
+write.table(responder_degenes, "response_de_genes.tsv", quote = F, row.names = F)
+outlier_degenes <- responder_degenes[responder_degenes$avg_logFC < -0.3, "gene"]
+pdf("degenes_allsamples.pdf")
+for (gene in (outlier_degenes)) {
+  print(FeaturePlot(all_samples, gene) + ggtitle(gene))
+}
+dev.off()
+
+print(length(untreated_noncompetent)/ncol(s1))
+#[1] 0.3162752
+print(length(untreated_competent)/ncol(s1))
+#[1] 0.602349
+```
+
+```{r monocle3 all genes}
+set.seed(600)
+library(Seurat)
+#load(file = "all_samples.Robject")
+all_samples_notg2 <- all_samples[, all_samples@meta.data$Phase != "G2M"]
+
+my.so <- all_samples_notg2
+my.so <- ProjectDim(my.so, reduction = "pca")
+
+# Create an expression matrix
+expression_matrix <- my.so@assays$RNA@counts
+
+# Get cell metadata
+cell_metadata <- my.so@meta.data
+if (all.equal(colnames(expression_matrix), rownames(cell_metadata))) {
+    print(sprintf("Cell identifiers match"))
+} else {
+    print(sprintf("Cell identifier mismatch - %i cells in expression matrix, %i cells in metadata",
+                ncol(expression_matrix), nrow(cell_metadata)))
+    print("If the counts are equal, sort differences will throw this error")
+}
+
+# get gene annotations
+gene_annotation <- data.frame(gene_short_name = rownames(my.so@assays$RNA), row.names = rownames(my.so@assays$RNA))
+if (all.equal(rownames(expression_matrix), rownames(gene_annotation))) {
+    print(sprintf("Gene identifiers all match"))
+} else {
+    print(sprintf("Gene identifier mismatch - %i genes in expression matrix, %i gene in gene annotation",
+                nrow(expression_matrix), nrow(gene_annotation)))
+    print("If the counts are equal, sort differences will throw this error")
+}
+
+# Seurat-derived CDS
+my.cds <- new_cell_data_set(expression_matrix,
+                            cell_metadata = cell_metadata,
+                            gene_metadata = gene_annotation)
+
+# Transfer Seurat embeddings
+# Note that these may be calculated on the Integrated object, not the counts
+#   and thus will involve fewer genes
+reducedDim(my.cds, type = "PCA") <- my.so@reductions$pca@cell.embeddings 
+my.cds@preprocess_aux$prop_var_expl <- my.so@reductions$pca@stdev
+plot_pc_variance_explained(my.cds)
+
+# Transfer Seurat UMAP embeddings
+my.cds@int_colData@listData$reducedDims$UMAP <- my.so@reductions$umap@cell.embeddings
+#    plot_cells(my.cds)
+
+# Copy cluster info from Seurat
+my.cds@clusters$UMAP_so$clusters <- my.so@meta.data$gt_tp_cell_type_integrated_.0.9
+
+my.cds <- cluster_cells(my.cds, reduction_method = "UMAP", resolution = 0.001, verbose = TRUE)
+#decreasing resolution reduces the number of clusters.
+
+# Fix from https://gitmemory.com/cole-trapnelwsql-lab
+rownames(my.cds@principal_graph_aux$UMAP$dp_mst) <- NULL
+colnames(my.cds@int_colData@listData$reducedDims$UMAP) <- NULL
+
+## Step 5: Learn a graph
+#my.cds <- learn_graph(my.cds, use_partition = T, close_loop = F)
+my.cds <- learn_graph(my.cds, use_partition = T, close_loop = F, learn_graph_control = list(minimal_branch_len = 15), verbose =  TRUE)
+
+## Step 6: Order cells according to pseudotime
+#cds <- order_cells(cds)
+output_prefix = "all_samples"
+save(my.cds, file = paste(output_prefix, "cds_v3.Robject", sep = "_"))
+
+print(paste(output_prefix, "_monocle3.pdf", sep = ""))
+pdf(paste(output_prefix, "_monocle3.pdf", sep = ""))
+
+DimPlot(my.so, reduction = "umap") + ggtitle("colored by seurat cluster")
+plot_cells(my.cds, color_cells_by = "partition", group_label_size = 3.5, show_trajectory_graph = FALSE) + ggtitle("colored by partition")
+plot_cells(my.cds, color_cells_by = "orig.ident", show_trajectory_graph = FALSE, group_label_size = 3.5)
+plot_cells(my.cds,
+        cell_size = 0.5,
+        color_cells_by = "orig.ident",
+        label_groups_by_cluster=FALSE,
+        label_leaves=FALSE,
+        label_cell_groups = F,
+        trajectory_graph_color = "black",
+        label_branch_points=FALSE)
+plot_cells(my.cds,
+        cell_size = 0.5,
+        color_cells_by = "hedgehog",
+        label_groups_by_cluster=FALSE,
+        label_leaves=FALSE,
+        trajectory_graph_color = "black",
+        label_branch_points=FALSE)
+plot_cells(my.cds,
+        cell_size = 0.5,
+        label_groups_by_cluster=FALSE,
+        label_leaves=FALSE,
+        trajectory_graph_color = "black",
+        label_branch_points=FALSE)
+plot_cells(my.cds,
+        cell_size = 0.5,
+        color_cells_by = "Phase",
+        label_groups_by_cluster=FALSE,
+        label_leaves=FALSE,
+        label_branch_points=FALSE)
+plot_cells(my.cds,
+        cell_size = 0.5,
+        color_cells_by = "seurat_clusters",
+        label_groups_by_cluster =FALSE,
+          group_label_size = 5,
+        label_leaves=FALSE,
+        label_branch_points=FALSE)
+
+dev.off()
+save(my.cds, file = "my_cds_120121.Robject")
+
+cbPalette <- c('#8dd3c7','#fccde5','#bebada','#fb8072','#80b1d3','#fdb462','#b3de69')
+pdf(paste(output_prefix, "_monocle3_seuratclusters.pdf", sep = ""))
+  plot_cells(my.cds,
+        cell_size = 1.0,
+        color_cells_by = "seurat_clusters",
+        label_cell_groups = FALSE,
+        label_groups_by_cluster =TRUE,
+          group_label_size = 5,
+        label_leaves=FALSE,
+        label_branch_points=FALSE)  + theme(axis.text=element_text(size=12, face="bold"),
+        axis.title=element_text(size=14,face="bold"), legend.title = element_text(size=14, face="bold"), legend.text = element_text(size=12, face="bold"))+
+      scale_colour_manual(values=cbPalette) 
+dev.off()
+
+pdf(paste(output_prefix, "_monocle3_origident.pdf", sep = ""))
+plot_cells(my.cds,
+        cell_size = 1.0,
+        color_cells_by = "orig.ident",
+        label_groups_by_cluster =FALSE,
+          group_label_size = 5,
+        label_leaves=FALSE,
+        label_branch_points=FALSE) + theme(axis.text=element_text(size=12, face="bold"),
+        axis.title=element_text(size=14,face="bold"), legend.title = element_text(size=14, face="bold"), legend.text = element_text(size=12, face="bold"))
+dev.off()
+
+pdf(paste(output_prefix, "_monocle3_origident_hedgehogexpression.pdf", sep = ""))
+plot_cells(my.cds,
+        cell_size = 1.0,
+        color_cells_by = "hedgehog",
+        label_groups_by_cluster=FALSE,
+        label_leaves=FALSE,
+        trajectory_graph_color = "black",
+        label_branch_points=FALSE) + theme(axis.text=element_text(size=12, face="bold"),
+        axis.title=element_text(size=14,face="bold"), legend.title = element_text(size=14, face="bold"), legend.text = element_text(size=12, face="bold")) +
+      scale_colour_gradientn(colors  = c('#f1eef6','#bdc9e1','#74a9cf','#2b8cbe','#045a8d'))
+dev.off()
+
+cbPalette <- c('#66c2a5','#fc8d62','#8da0cb')
+pdf(paste(output_prefix, "_monocle3_origident_notrajectory.pdf", sep = ""))
+DimPlot(my.so, reduction = "umap", group.by = "orig.ident") + theme(axis.text=element_text(size=12, face="bold"),
+        axis.title=element_text(size=14,face="bold"), legend.title = element_text(size=14, face="bold"), legend.text = element_text(size=12, face = "bold"))+
+      scale_colour_manual(values=cbPalette)
+dev.off()
+
+```
+
+```{r monocle3 DE genes'}
+
+
+my.so <- all_samples_de
+my.so <- ProjectDim(my.so, reduction = "pca")
+
+# Create an expression matrix
+expression_matrix <- my.so@assays$RNA@counts
+
+# Get cell metadata
+cell_metadata <- my.so@meta.data
+if (all.equal(colnames(expression_matrix), rownames(cell_metadata))) {
+    print(sprintf("Cell identifiers match"))
+} else {
+    print(sprintf("Cell identifier mismatch - %i cells in expression matrix, %i cells in metadata",
+                ncol(expression_matrix), nrow(cell_metadata)))
+    print("If the counts are equal, sort differences will throw this error")
+}
+
+# get gene annotations
+gene_annotation <- data.frame(gene_short_name = rownames(my.so@assays$RNA), row.names = rownames(my.so@assays$RNA))
+if (all.equal(rownames(expression_matrix), rownames(gene_annotation))) {
+    print(sprintf("Gene identifiers all match"))
+} else {
+    print(sprintf("Gene identifier mismatch - %i genes in expression matrix, %i gene in gene annotation",
+                nrow(expression_matrix), nrow(gene_annotation)))
+    print("If the counts are equal, sort differences will throw this error")
+}
+
+# Seurat-derived CDS
+my.cds <- new_cell_data_set(expression_matrix,
+                            cell_metadata = cell_metadata,
+                            gene_metadata = gene_annotation)
+
+# Transfer Seurat embeddings
+# Note that these may be calculated on the Integrated object, not the counts
+#   and thus will involve fewer genes
+reducedDim(my.cds, type = "PCA") <- my.so@reductions$pca@cell.embeddings 
+my.cds@preprocess_aux$prop_var_expl <- my.so@reductions$pca@stdev
+plot_pc_variance_explained(my.cds)
+
+# Transfer Seurat UMAP embeddings
+my.cds@int_colData@listData$reducedDims$UMAP <- my.so@reductions$umap@cell.embeddings
+#    plot_cells(my.cds)
+
+# Copy cluster info from Seurat
+my.cds@clusters$UMAP_so$clusters <- my.so@meta.data$gt_tp_cell_type_integrated_.0.9
+
+my.cds <- cluster_cells(my.cds, reduction_method = "UMAP", resolution = NULL)
+
+# Fix from https://gitmemory.com/cole-trapnell-lab
+rownames(my.cds@principal_graph_aux$UMAP$dp_mst) <- NULL
+colnames(my.cds@int_colData@listData$reducedDims$UMAP) <- NULL
+
+## Step 5: Learn a graph
+my.cds <- learn_graph(my.cds, use_partition = T, close_loop = F, learn_graph_control = list(minimal_branch_len = 15))
+
+## Step 6: Order cells according to pseudotime
+#cds <- order_cells(cds)
+output_prefix = "all_samples_de"
+save(my.cds, file = paste(output_prefix, "cds_v3.Robject", sep = "_"))
+
+print(paste(output_prefix, "_monocle3.pdf", sep = ""))
+pdf(paste(output_prefix, "_monocle3.pdf", sep = ""))
+DimPlot(all_samples, reduction = "umap", label = T)
+DimPlot(my.so, reduction = "umap", label = T)
+plot_cells(my.cds, color_cells_by = "partition", group_label_size = 3.5)
+plot_cells(my.cds, color_cells_by = "Phase", group_label_size = 3.5)
+plot_cells(my.cds, color_cells_by = "orig.ident", show_trajectory_graph = FALSE, group_label_size = 3.5)
+plot_cells(my.cds,
+        cell_size = 0.5,
+        color_cells_by = "orig.ident",
+        label_groups_by_cluster=FALSE,
+        label_leaves=FALSE,
+        label_cell_groups = F,
+        trajectory_graph_color = "black",
+        label_branch_points=FALSE)
+plot_cells(my.cds,
+        cell_size = 0.5,
+        color_cells_by = "hedgehog",
+        label_groups_by_cluster=FALSE,
+        label_leaves=FALSE,
+        trajectory_graph_color = "black",
+        label_branch_points=FALSE)
+plot_cells(my.cds,
+        cell_size = 0.5,
+        color_cells_by = "Phase",
+        label_groups_by_cluster=FALSE,
+        label_leaves=FALSE,
+        label_branch_points=FALSE)
+dev.off()
+```
+
+```{r try TSCAN for trajectory analysis}
+library(TSCAN)
+all_samples_sce <- as.data.frame(counts(as.SingleCellExperiment(all_samples)))
+proc_all_samples_sce <- TSCAN::preprocess(all_samples_sce, takelog = FALSE)
+
+#colnames(procdeng) <- 1:ncol(all_samples_notg2)
+
+clust_all_samples_sce <- TSCAN::exprmclust(proc_all_samples_sce)
+
+TSCAN::plotmclust(clust_all_samples_sce, show_cell_names = F)
+```
+
+
+
+```{r}
+## I've moved this to a new file TSCAN.Rmd
+## 
+run_tscan <- function() {
+  library(scran)
+  library(TSCAN)
+  library(SingleCellExperiment)
+  #devtools::install_github("MarioniLab/scran")
+  all_samples_sce <- as.SingleCellExperiment(all_samples)
+  by.cluster <- aggregateAcrossCells(all_samples_sce, ids = colnames(all_samples_sce))
+  centroids <- reducedDim(by.cluster, "PCA")
+  mst <- createClusterMST(centroids, clusters=NULL)
+  line.data <- reportEdges(by.cluster, mst=mst, clusters=NULL, use.dimred="UMAP")
+  print(plotUMAP(as.SingleCellExperiment(all_samples)))+ 
+    geom_line(data=line.data, mapping=aes(x=dim1, y=dim2, group=edge))
+}
+
+```
+
+
+
+
+
+```{r summary cluster}
+print(table(all_samples@meta.data$orig.ident))
+print(prop.table(table(all_samples@meta.data$orig.ident)))
+
+```
+
+
+
+
+```{r save_environment}
+save.image("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/110821_seurat_originaldataset_v2/1208_Renvironment.RData")
+```
+
+```{r load environment}
+load("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/110821_seurat_originaldataset_v2/1208_Renvironment.RData")
+#load("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/110821_seurat_originaldataset_v2/1109_Renvironment.RData")
+```
+
