@@ -855,7 +855,8 @@ plot_monocle <- function(my.so, my.cds, output_prefix) {
              trajectory_graph_color = "black",
              label_branch_points=FALSE) + theme(axis.text=element_text(size=12, face="bold"),
                                                 axis.title=element_text(size=14,face="bold"), legend.title = element_text(size=14, face="bold"), legend.text = element_text(size=12, face="bold"))+
-      scale_colour_gradientn(colors  = c('#f1eef6','#bdc9e1','#74a9cf','#2b8cbe','#045a8d')))
+       scale_colour_gradientn(colors  = c('#f1eef6','#f1eef6','#f1eef6','#2b8cbe','#045a8d'))) # try this
+      #scale_colour_gradientn(colors  = c('#f1eef6','#bdc9e1','#74a9cf','#2b8cbe','#045a8d')))
   dev.off()
   
   cbPalette <- c('#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6','#6a3d9a')
