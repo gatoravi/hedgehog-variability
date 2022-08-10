@@ -29,7 +29,7 @@ setwd("/scratch/bclab/aramu/analysis/3t3-SAG-10X/results/110821_seurat_originald
 ```
 
 ```{r mark_competent_cells}
-#all_samples <- all_samples[, all_samples@meta.data$Phase != "G2M"]
+all_samples <- all_samples[, all_samples@meta.data$Phase != "G2M"]
 print(DimPlot(all_samples, reduction = "umap", pt.size = 2.0,  group.by  = "orig.ident", label = T))
 print(DimPlot(all_samples, reduction = "umap", pt.size = 2.0,  group.by  = "Phase", label = T))
 print(DimPlot(all_samples, reduction = "umap", pt.size = 2.0,  label = T))
@@ -163,6 +163,43 @@ print(FeaturePlot(all_samples, features = "hedgehog", reduction = "umap", min.cu
 print(DimPlot(all_samples, reduction = "umap", group.by = "Phase"))
 
 
+```
+```{r pca_highlight_aug2022}
+
+print(dim(untreated_noncompetent))
+print(dim(untreated_competent))
+
+pdf("pca_competent_noncompetent.pdf")
+print(DimPlot(all_samples, reduction = "pca", cells.highlight = colnames(untreated_noncompetent)) + ggtitle("0 hours - non competent") + NoLegend())
+print(DimPlot(all_samples, reduction = "pca", cells.highlight = colnames(untreated_competent)) + ggtitle("0 hours - competent") + NoLegend())
+dev.off()
+
+cluster_cols = cbPalette <- c('#8dd3c7','#fccde5','#bebada','#fb8072','#80b1d3','#fdb462','#b3de69')
+ident_cols <- c('#66c2a5','#fc8d62','#8da0cb')
+
+pdf("pca_origident.pdf")
+print(DimPlot(all_samples, reduction = "pca", dims = c(1, 2), group.by = "orig.ident", cols=alpha(ident_cols, 0.8)))
+dev.off()
+pdf("pca_dim23.pdf")
+print(DimPlot(all_samples, reduction = "pca", dims = c(2, 3), group.by = "orig.ident", cols=alpha(ident_cols, 0.8)))
+dev.off()
+pdf("pca_nobatcheffect.pdf")
+print(DimPlot(all_samples, reduction = "pca", dims = c(3, 4), group.by = "orig.ident", cols=alpha(ident_cols, 0.8)))
+ElbowPlot(all_samples)
+dev.off()
+
+require(ggplot2)
+pdf("pca_seuratclusters.pdf")
+print(DimPlot(all_samples, reduction = "pca", group.by = "seurat_clusters", cols=alpha(cluster_cols)))
+dev.off()
+pdf("pca_hedgehog.pdf")
+print(FeaturePlot(all_samples, reduction = "pca", features = c("hedgehog"), cols  = alpha(c('#f1eef6','#f1eef6','#f1eef6','#2b8cbe','#045a8d'), 0.8)))
+dev.off()
+#, cols=scale_colour_gradientn(colors  = c('#f1eef6','#bdc9e1','#74a9cf','#2b8cbe','#045a8d'))))
+table(all_samples$hedgehog)
+print(DimPlot(all_samples, reduction = "pca", group.by = "Phase", cols=alpha(cluster_cols)))
+print(DimPlot(all_samples, reduction = "umap", group.by = "seurat_clusters", cols=alpha(cluster_cols)))
+save(all_samples, file = "all_samples_noG2.Robject")
 ```
 
 ```{r highlight cells in de}
